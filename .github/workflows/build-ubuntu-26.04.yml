@@ -1,0 +1,130 @@
+name: Build Ubuntu 26.04 VM image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release/image version to publish.
+        required: true
+        default: ubuntu-26.04-amd64-v2
+      ubuntu_cloud_base_url:
+        description: Ubuntu cloud image directory URL.
+        required: true
+        default: https://cloud-images.ubuntu.com/resolute/current
+      ubuntu_cloud_image:
+        description: Ubuntu cloud image tarball name.
+        required: true
+        default: resolute-server-cloudimg-amd64.tar.gz
+      firecracker_version:
+        description: Firecracker release version.
+        required: true
+        default: v1.14.3
+      zstd_level:
+        description: zstd compression level for rootfs.ext4.zst.
+        required: true
+        default: "10"
+      overwrite_release:
+        description: Delete an existing release/tag with the same version before publishing.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and publish image bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    env:
+      VERSION: ${{ inputs.version }}
+      OUT_DIR: dist/${{ inputs.version }}
+      UBUNTU_CLOUD_BASE_URL: ${{ inputs.ubuntu_cloud_base_url }}
+      UBUNTU_CLOUD_IMAGE: ${{ inputs.ubuntu_cloud_image }}
+      FIRECRACKER_VERSION: ${{ inputs.firecracker_version }}
+      ZSTD_LEVEL: ${{ inputs.zstd_level }}
+      YEET_VM_IMAGE_VERSION: ${{ inputs.version }}
+      YEET_VM_IMAGE_WORK_DIR: ${{ github.workspace }}/.build-work
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs file jq zstd
+
+      - name: Build image bundle
+        run: |
+          scripts/build-ubuntu-26.04.sh "$OUT_DIR"
+
+      - name: Verify bundle
+        run: |
+          set -euo pipefail
+          for asset in manifest.json vmlinux initrd.img rootfs.ext4.zst firecracker checksums.txt; do
+            test -s "$OUT_DIR/$asset"
+          done
+          (
+            cd "$OUT_DIR"
+            sha256sum -c checksums.txt
+          )
+          jq . "$OUT_DIR/manifest.json"
+
+      - name: Prepare release notes
+        run: |
+          set -euo pipefail
+          kernel_version="$(jq -r '.ubuntu_kernel_version' "$OUT_DIR/manifest.json")"
+          ubuntu_url="$(jq -r '.provenance.ubuntu_cloud_image_url' "$OUT_DIR/manifest.json")"
+          firecracker_version="$(jq -r '.provenance.firecracker_version' "$OUT_DIR/manifest.json")"
+          cat >"$OUT_DIR/release-notes.md" <<EOF
+          Experimental yeet Ubuntu 26.04 amd64 VM image bundle.
+
+          - Version: \`$VERSION\`
+          - Ubuntu kernel: \`$kernel_version\`
+          - Ubuntu source image: <$ubuntu_url>
+          - Firecracker: \`$firecracker_version\`
+
+          See \`manifest.json\` for full checksums and provenance.
+          EOF
+
+      - name: Check release target
+        run: |
+          set -euo pipefail
+          overwrite="${{ inputs.overwrite_release }}"
+          release_exists=0
+          tag_exists=0
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            release_exists=1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            tag_exists=1
+          fi
+          if [ "$release_exists" -eq 0 ] && [ "$tag_exists" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$overwrite" != "true" ]; then
+            echo "Release or tag $VERSION already exists. Re-run with overwrite_release=true to replace it." >&2
+            exit 1
+          fi
+          if [ "$release_exists" -eq 1 ]; then
+            gh release delete "$VERSION" --cleanup-tag --yes
+          elif [ "$tag_exists" -eq 1 ]; then
+            git push origin ":refs/tags/$VERSION"
+          fi
+
+      - name: Publish release
+        run: |
+          gh release create "$VERSION" \
+            "$OUT_DIR/manifest.json" \
+            "$OUT_DIR/vmlinux" \
+            "$OUT_DIR/initrd.img" \
+            "$OUT_DIR/rootfs.ext4.zst" \
+            "$OUT_DIR/firecracker" \
+            "$OUT_DIR/checksums.txt" \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --notes-file "$OUT_DIR/release-notes.md"
