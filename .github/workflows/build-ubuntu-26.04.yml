@@ -74,6 +74,7 @@ jobs:
       YEET_VM_IMAGE_VERSION: ${{ inputs.version }}
       YEET_VM_IMAGE_PROFILE: fast
       YEET_VM_IMAGE_WORK_DIR: ${{ github.workspace }}/.build-work
+      YEET_VM_INIT_BINARY: ${{ github.workspace }}/yeet-src/guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -114,9 +115,8 @@ jobs:
         run: |
           cd yeet-src
           "$HOME/.local/bin/mise" install
-          "$HOME/.local/bin/mise" exec -- rustup target add x86_64-unknown-linux-musl
-          "$HOME/.local/bin/mise" exec -- cargo build --locked --manifest-path guest/yeet-init/Cargo.toml --release --target x86_64-unknown-linux-musl
-          file guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init
+          "$HOME/.local/bin/mise" run guest:init:build
+          test -x "$YEET_VM_INIT_BINARY"
 
       - name: Build yeet-managed kernel
         run: |
@@ -131,7 +131,7 @@ jobs:
             YEET_VM_IMAGE_PROFILE="$YEET_VM_IMAGE_PROFILE" \
             YEET_VM_IMAGE_VERSION="$YEET_VM_IMAGE_VERSION" \
             YEET_VM_IMAGE_WORK_DIR="$YEET_VM_IMAGE_WORK_DIR" \
-            YEET_VM_INIT_PATH="$GITHUB_WORKSPACE/yeet-src/guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init" \
+            YEET_VM_INIT_PATH="$YEET_VM_INIT_BINARY" \
             YEET_VM_KERNEL_PATH="$GITHUB_WORKSPACE/$KERNEL_OUT_DIR/vmlinux" \
             YEET_VM_KERNEL_VERSION="linux-${YEET_KERNEL_VERSION}-yeet" \
             ZSTD_LEVEL="$ZSTD_LEVEL" \
@@ -152,6 +152,24 @@ jobs:
             cd "$OUT_DIR"
             sha256sum -c checksums.txt
           )
+          check_manifest_checksum() {
+            local asset="$1"
+            local want
+            local got
+            want="$(jq -r --arg asset "$asset" '.checksums[$asset] // empty' "$OUT_DIR/manifest.json")"
+            if [ -z "$want" ]; then
+              echo "manifest missing checksum for $asset" >&2
+              exit 1
+            fi
+            got="$(sha256sum "$OUT_DIR/$asset" | awk '{ print $1 }')"
+            if [ "$got" != "$want" ]; then
+              echo "manifest checksum mismatch for $asset: got $got, want $want" >&2
+              exit 1
+            fi
+          }
+          check_manifest_checksum vmlinux
+          check_manifest_checksum rootfs.ext4.zst
+          check_manifest_checksum firecracker
           jq -e '
             .image_profile == "fast" and
             .kernel_policy == "yeet-managed" and
@@ -174,6 +192,14 @@ jobs:
           zstd -d -f --no-progress -o "$RUNNER_TEMP/rootfs.ext4" "$OUT_DIR/rootfs.ext4.zst"
           debugfs -R 'stat /usr/local/lib/yeet-vm/yeet-init' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /usr/share/doc/yeet-vm-image/init.md' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
+          debugfs -R "dump -p /usr/local/lib/yeet-vm/yeet-init $RUNNER_TEMP/yeet-init" "$RUNNER_TEMP/rootfs.ext4" >/dev/null
+          expected_guest_init_sha="$(sha256sum "$YEET_VM_INIT_BINARY" | awk '{ print $1 }')"
+          embedded_guest_init_sha="$(sha256sum "$RUNNER_TEMP/yeet-init" | awk '{ print $1 }')"
+          manifest_guest_init_sha="$(jq -r '.guest_init_sha256' "$OUT_DIR/manifest.json")"
+          if [ "$manifest_guest_init_sha" != "$expected_guest_init_sha" ] || [ "$manifest_guest_init_sha" != "$embedded_guest_init_sha" ]; then
+            echo "guest_init_sha256 mismatch: manifest=$manifest_guest_init_sha build=$expected_guest_init_sha embedded=$embedded_guest_init_sha" >&2
+            exit 1
+          fi
           jq . "$OUT_DIR/manifest.json"
 
       - name: Prepare release notes
