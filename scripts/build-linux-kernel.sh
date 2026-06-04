@@ -86,6 +86,7 @@ echo "Configuring yeet Firecracker kernel..."
 		--enable SECURITY_APPARMOR \
 		--enable SECURITY_APPARMOR_HASH \
 		--enable SECURITY_APPARMOR_HASH_DEFAULT \
+		--disable X86_5LEVEL \
 		--set-str LOCALVERSION "$localversion"
 	make olddefconfig
 )
