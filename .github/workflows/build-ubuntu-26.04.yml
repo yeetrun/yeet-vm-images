@@ -19,6 +19,22 @@ on:
         description: Firecracker release version.
         required: true
         default: v1.14.3
+      kernel_version:
+        description: Linux kernel version to build.
+        required: true
+        default: "7.0"
+      kernel_source_url:
+        description: Linux kernel source tarball URL.
+        required: true
+        default: https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.0.tar.xz
+      kernel_source_sha256:
+        description: Linux kernel source tarball SHA-256.
+        required: true
+        default: bb7f6d80b387c757b7d14bb93028fcb90f793c5c0d367736ee815a100b3891f0
+      kernel_config_url:
+        description: Firecracker guest kernel config URL.
+        required: true
+        default: https://raw.githubusercontent.com/firecracker-microvm/firecracker/v1.14.3/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
       zstd_level:
         description: zstd compression level for rootfs.ext4.zst.
         required: true
@@ -44,8 +60,15 @@ jobs:
       UBUNTU_CLOUD_BASE_URL: ${{ inputs.ubuntu_cloud_base_url }}
       UBUNTU_CLOUD_IMAGE: ${{ inputs.ubuntu_cloud_image }}
       FIRECRACKER_VERSION: ${{ inputs.firecracker_version }}
+      KERNEL_OUT_DIR: dist/kernel-linux-${{ inputs.kernel_version }}
       ZSTD_LEVEL: ${{ inputs.zstd_level }}
+      YEET_KERNEL_VERSION: ${{ inputs.kernel_version }}
+      YEET_KERNEL_SOURCE_URL: ${{ inputs.kernel_source_url }}
+      YEET_KERNEL_SOURCE_SHA256: ${{ inputs.kernel_source_sha256 }}
+      YEET_KERNEL_CONFIG_URL: ${{ inputs.kernel_config_url }}
+      YEET_KERNEL_WORK_DIR: ${{ github.workspace }}/.kernel-build-work
       YEET_VM_IMAGE_VERSION: ${{ inputs.version }}
+      YEET_VM_IMAGE_PROFILE: fast
       YEET_VM_IMAGE_WORK_DIR: ${{ github.workspace }}/.build-work
       GH_TOKEN: ${{ github.token }}
 
@@ -56,35 +79,81 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y e2fsprogs file jq zstd
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            dwarves \
+            e2fsprogs \
+            file \
+            flex \
+            jq \
+            libelf-dev \
+            libssl-dev \
+            xz-utils \
+            zstd
+
+      - name: Build yeet-managed kernel
+        run: |
+          scripts/build-linux-kernel.sh "$KERNEL_OUT_DIR"
 
       - name: Build image bundle
         run: |
-          scripts/build-ubuntu-26.04.sh "$OUT_DIR"
+          sudo env \
+            FIRECRACKER_VERSION="$FIRECRACKER_VERSION" \
+            UBUNTU_CLOUD_BASE_URL="$UBUNTU_CLOUD_BASE_URL" \
+            UBUNTU_CLOUD_IMAGE="$UBUNTU_CLOUD_IMAGE" \
+            YEET_VM_IMAGE_PROFILE="$YEET_VM_IMAGE_PROFILE" \
+            YEET_VM_IMAGE_VERSION="$YEET_VM_IMAGE_VERSION" \
+            YEET_VM_IMAGE_WORK_DIR="$YEET_VM_IMAGE_WORK_DIR" \
+            YEET_VM_KERNEL_PATH="$GITHUB_WORKSPACE/$KERNEL_OUT_DIR/vmlinux" \
+            YEET_VM_KERNEL_VERSION="linux-${YEET_KERNEL_VERSION}-yeet" \
+            ZSTD_LEVEL="$ZSTD_LEVEL" \
+            scripts/build-ubuntu-26.04.sh "$OUT_DIR"
+          sudo chown -R "$USER:$USER" "$OUT_DIR"
 
       - name: Verify bundle
         run: |
           set -euo pipefail
-          for asset in manifest.json vmlinux initrd.img rootfs.ext4.zst firecracker checksums.txt; do
+          for asset in manifest.json vmlinux rootfs.ext4.zst firecracker kernel.config checksums.txt; do
             test -s "$OUT_DIR/$asset"
           done
+          if [ -e "$OUT_DIR/initrd.img" ]; then
+            echo "fast image bundle must not include initrd.img" >&2
+            exit 1
+          fi
           (
             cd "$OUT_DIR"
             sha256sum -c checksums.txt
           )
+          jq -e '
+            .image_profile == "fast" and
+            .kernel_policy == "yeet-managed" and
+            .snap_support == false and
+            (.initrd | not) and
+            .kernel == "vmlinux" and
+            .rootfs == "rootfs.ext4.zst" and
+            .provenance.kernel_source == "yeet-managed"
+          ' "$OUT_DIR/manifest.json"
+          grep -q '^# CONFIG_MODULES is not set$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_VIRTIO_MMIO=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_VIRTIO_BLK=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_VIRTIO_NET=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_EXT4_FS=y$' "$OUT_DIR/kernel.config"
           jq . "$OUT_DIR/manifest.json"
 
       - name: Prepare release notes
         run: |
           set -euo pipefail
-          kernel_version="$(jq -r '.ubuntu_kernel_version' "$OUT_DIR/manifest.json")"
+          kernel_version="$(jq -r '.kernel_version' "$OUT_DIR/manifest.json")"
           ubuntu_url="$(jq -r '.provenance.ubuntu_cloud_image_url' "$OUT_DIR/manifest.json")"
           firecracker_version="$(jq -r '.provenance.firecracker_version' "$OUT_DIR/manifest.json")"
           cat >"$OUT_DIR/release-notes.md" <<EOF
           Experimental yeet Ubuntu 26.04 amd64 VM image bundle.
 
           - Version: \`$VERSION\`
-          - Ubuntu kernel: \`$kernel_version\`
+          - Kernel: \`$kernel_version\`
+          - Profile: fast, no initrd, no snap support
           - Ubuntu source image: <$ubuntu_url>
           - Firecracker: \`$firecracker_version\`
 
@@ -121,9 +190,9 @@ jobs:
           gh release create "$VERSION" \
             "$OUT_DIR/manifest.json" \
             "$OUT_DIR/vmlinux" \
-            "$OUT_DIR/initrd.img" \
             "$OUT_DIR/rootfs.ext4.zst" \
             "$OUT_DIR/firecracker" \
+            "$OUT_DIR/kernel.config" \
             "$OUT_DIR/checksums.txt" \
             --target "$GITHUB_SHA" \
             --title "$VERSION" \
