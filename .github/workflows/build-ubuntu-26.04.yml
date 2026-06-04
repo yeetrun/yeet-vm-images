@@ -6,7 +6,11 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v3
+        default: ubuntu-26.04-amd64-v4
+      yeet_ref:
+        description: yeet repository ref used to build guest/yeet-init.
+        required: true
+        default: main
       ubuntu_cloud_base_url:
         description: Ubuntu cloud image directory URL.
         required: true
@@ -76,6 +80,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout yeet source
+        uses: actions/checkout@v4
+        with:
+          repository: yeetrun/yeet
+          ref: ${{ inputs.yeet_ref }}
+          path: yeet-src
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -90,8 +101,22 @@ jobs:
             jq \
             libelf-dev \
             libssl-dev \
+            musl-tools \
             xz-utils \
             zstd
+
+      - name: Install mise
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build yeet init
+        run: |
+          cd yeet-src
+          "$HOME/.local/bin/mise" install
+          "$HOME/.local/bin/mise" exec -- rustup target add x86_64-unknown-linux-musl
+          "$HOME/.local/bin/mise" exec -- cargo build --locked --manifest-path guest/yeet-init/Cargo.toml --release --target x86_64-unknown-linux-musl
+          file guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init
 
       - name: Build yeet-managed kernel
         run: |
@@ -106,6 +131,7 @@ jobs:
             YEET_VM_IMAGE_PROFILE="$YEET_VM_IMAGE_PROFILE" \
             YEET_VM_IMAGE_VERSION="$YEET_VM_IMAGE_VERSION" \
             YEET_VM_IMAGE_WORK_DIR="$YEET_VM_IMAGE_WORK_DIR" \
+            YEET_VM_INIT_PATH="$GITHUB_WORKSPACE/yeet-src/guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init" \
             YEET_VM_KERNEL_PATH="$GITHUB_WORKSPACE/$KERNEL_OUT_DIR/vmlinux" \
             YEET_VM_KERNEL_VERSION="linux-${YEET_KERNEL_VERSION}-yeet" \
             ZSTD_LEVEL="$ZSTD_LEVEL" \
@@ -131,6 +157,8 @@ jobs:
             .kernel_policy == "yeet-managed" and
             .snap_support == false and
             (.initrd | not) and
+            .guest_init == "/usr/local/lib/yeet-vm/yeet-init" and
+            (.guest_init_sha256 | test("^[0-9a-f]{64}$")) and
             .kernel == "vmlinux" and
             .rootfs == "rootfs.ext4.zst" and
             .provenance.kernel_source == "yeet-managed"
@@ -141,6 +169,11 @@ jobs:
           grep -q '^CONFIG_VIRTIO_BLK=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_NET=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_EXT4_FS=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_IP_PNP=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_IP_PNP_DHCP=y$' "$OUT_DIR/kernel.config"
+          zstd -d -f --no-progress -o "$RUNNER_TEMP/rootfs.ext4" "$OUT_DIR/rootfs.ext4.zst"
+          debugfs -R 'stat /usr/local/lib/yeet-vm/yeet-init' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
+          debugfs -R 'stat /usr/share/doc/yeet-vm-image/init.md' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           jq . "$OUT_DIR/manifest.json"
 
       - name: Prepare release notes
@@ -154,7 +187,7 @@ jobs:
 
           - Version: \`$VERSION\`
           - Kernel: \`$kernel_version\`
-          - Profile: fast, no initrd, no snap support
+          - Profile: fast, no initrd, no snap support, includes yeet-init
           - Ubuntu source image: <$ubuntu_url>
           - Firecracker: \`$firecracker_version\`
 
