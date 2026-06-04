@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v5
+        default: ubuntu-26.04-amd64-v6
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -226,6 +226,12 @@ jobs:
           assert_unit_masked e2scrub_reap.service
           assert_unit_masked ldconfig.service
           assert_unit_masked keyboard-setup.service
+          assert_unit_masked systemd-modules-load.service
+          assert_unit_masked modprobe@.service
+          assert_unit_masked modprobe@configfs.service
+          assert_unit_masked modprobe@drm.service
+          assert_unit_masked modprobe@efi_pstore.service
+          assert_unit_masked modprobe@fuse.service
           expected_guest_init_sha="$(sha256sum "$YEET_VM_INIT_BINARY" | awk '{ print $1 }')"
           embedded_guest_init_sha="$(sha256sum "$RUNNER_TEMP/yeet-init" | awk '{ print $1 }')"
           manifest_guest_init_sha="$(jq -r '.guest_init_sha256' "$OUT_DIR/manifest.json")"
