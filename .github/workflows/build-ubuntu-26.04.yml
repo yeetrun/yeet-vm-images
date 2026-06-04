@@ -137,10 +137,11 @@ jobs:
           ' "$OUT_DIR/manifest.json"
           grep -q '^# CONFIG_MODULES is not set$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_BLK_MQ_VIRTIO=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_BLK=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_NET=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_EXT4_FS=y$' "$OUT_DIR/kernel.config"
+          grep -q '^# CONFIG_X86_5LEVEL is not set$' "$OUT_DIR/kernel.config"
           jq . "$OUT_DIR/manifest.json"
 
       - name: Prepare release notes

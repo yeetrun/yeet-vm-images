@@ -73,7 +73,6 @@ echo "Configuring yeet Firecracker kernel..."
 		--enable VIRTIO \
 		--enable VIRTIO_MMIO \
 		--enable VIRTIO_MMIO_CMDLINE_DEVICES \
-		--enable BLK_MQ_VIRTIO \
 		--enable VIRTIO_BLK \
 		--enable VIRTIO_NET \
 		--enable EXT4_FS \
@@ -112,13 +111,14 @@ require_config() {
 
 require_config CONFIG_MODULES n
 require_config CONFIG_VIRTIO_MMIO y
-require_config CONFIG_BLK_MQ_VIRTIO y
+require_config CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES y
 require_config CONFIG_VIRTIO_BLK y
 require_config CONFIG_VIRTIO_NET y
 require_config CONFIG_EXT4_FS y
 require_config CONFIG_SERIAL_8250_CONSOLE y
 require_config CONFIG_DEVTMPFS y
 require_config CONFIG_DEVTMPFS_MOUNT y
+require_config CONFIG_X86_5LEVEL n
 
 echo "Building vmlinux..."
 make -C "$src_dir" -j"$(nproc)" vmlinux
