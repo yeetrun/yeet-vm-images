@@ -86,7 +86,7 @@ echo "Configuring yeet Firecracker kernel..."
 		--enable SECURITY_APPARMOR \
 		--enable SECURITY_APPARMOR_HASH \
 		--enable SECURITY_APPARMOR_HASH_DEFAULT \
-		--disable X86_5LEVEL \
+		--set-val PGTABLE_LEVELS 4 \
 		--set-str LOCALVERSION "$localversion"
 	make olddefconfig
 )
@@ -119,7 +119,7 @@ require_config CONFIG_EXT4_FS y
 require_config CONFIG_SERIAL_8250_CONSOLE y
 require_config CONFIG_DEVTMPFS y
 require_config CONFIG_DEVTMPFS_MOUNT y
-require_config CONFIG_X86_5LEVEL n
+require_config CONFIG_PGTABLE_LEVELS 4
 
 echo "Building vmlinux..."
 make -C "$src_dir" -j"$(nproc)" vmlinux

@@ -141,7 +141,7 @@ jobs:
           grep -q '^CONFIG_VIRTIO_BLK=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_NET=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_EXT4_FS=y$' "$OUT_DIR/kernel.config"
-          grep -q '^# CONFIG_X86_5LEVEL is not set$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_PGTABLE_LEVELS=4$' "$OUT_DIR/kernel.config"
           jq . "$OUT_DIR/manifest.json"
 
       - name: Prepare release notes
