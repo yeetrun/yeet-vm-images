@@ -199,7 +199,7 @@ jobs:
           assert_unit_masked() {
             local unit="$1"
             local link
-            link="$(debugfs -R "stat /etc/systemd/system/$unit" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F': ' '/Fast link dest:/ { print $2; exit }')"
+            link="$(debugfs -R "stat /etc/systemd/system/$unit" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F': ' '/Fast link dest:/ { gsub(/^"|"$/, "", $2); print $2; exit }')"
             if [ "$link" != "/dev/null" ]; then
               echo "expected $unit to be masked to /dev/null, got ${link:-missing}" >&2
               exit 1
