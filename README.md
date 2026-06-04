@@ -8,7 +8,7 @@ The current experimental Ubuntu payload is:
 vm://ubuntu/26.04
 ```
 
-The current fast bundle version is `ubuntu-26.04-amd64-v2`. It is built from
+The current fast bundle version is `ubuntu-26.04-amd64-v3`. It is built from
 Canonical's official Ubuntu 26.04 cloud image and boots a yeet-managed Linux
 kernel under Firecracker direct kernel boot without an initrd.
 
@@ -31,7 +31,7 @@ Build the full bundle on a Linux host with:
 scripts/build-linux-kernel.sh dist/kernel-linux-7.0
 sudo YEET_VM_KERNEL_PATH="$PWD/dist/kernel-linux-7.0/vmlinux" \
   YEET_VM_KERNEL_VERSION=linux-7.0-yeet \
-  scripts/build-ubuntu-26.04.sh dist/ubuntu-26.04-amd64-v2
+  scripts/build-ubuntu-26.04.sh dist/ubuntu-26.04-amd64-v3
 ```
 
 ## Publish a New Bundle
@@ -43,7 +43,7 @@ bundle, and publishes the release assets.
 
 Inputs:
 
-- `version`: release and image version, for example `ubuntu-26.04-amd64-v2`
+- `version`: release and image version, for example `ubuntu-26.04-amd64-v3`
 - `ubuntu_cloud_base_url`: Ubuntu cloud image directory URL
 - `ubuntu_cloud_image`: Ubuntu cloud image tarball name
 - `firecracker_version`: Firecracker release version
@@ -51,7 +51,8 @@ Inputs:
 - `kernel_source_url`: Linux kernel source tarball URL
 - `kernel_source_sha256`: Linux kernel source tarball SHA-256
 - `kernel_config_url`: Firecracker guest kernel config URL used as the build
-  baseline
+  baseline. The default is pinned to the Firecracker microVM config revision
+  used by yeet's no-initrd direct-boot image.
 - `zstd_level`: compression level for `rootfs.ext4.zst`
 - `overwrite_release`: delete an existing release/tag with the same version
   before publishing

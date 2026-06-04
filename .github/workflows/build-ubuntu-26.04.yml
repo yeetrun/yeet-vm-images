@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v2
+        default: ubuntu-26.04-amd64-v3
       ubuntu_cloud_base_url:
         description: Ubuntu cloud image directory URL.
         required: true
@@ -34,7 +34,7 @@ on:
       kernel_config_url:
         description: Firecracker guest kernel config URL.
         required: true
-        default: https://raw.githubusercontent.com/firecracker-microvm/firecracker/v1.14.3/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
+        default: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
       zstd_level:
         description: zstd compression level for rootfs.ext4.zst.
         required: true
@@ -137,6 +137,7 @@ jobs:
           ' "$OUT_DIR/manifest.json"
           grep -q '^# CONFIG_MODULES is not set$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_BLK_MQ_VIRTIO=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_BLK=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_NET=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_EXT4_FS=y$' "$OUT_DIR/kernel.config"

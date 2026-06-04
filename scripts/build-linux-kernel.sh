@@ -10,7 +10,9 @@ out_dir="${1:-dist/kernel-linux-$kernel_version}"
 work_dir="${YEET_KERNEL_WORK_DIR:-}"
 source_url="${YEET_KERNEL_SOURCE_URL:-https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${kernel_version}.tar.xz}"
 source_sha="${YEET_KERNEL_SOURCE_SHA256:-bb7f6d80b387c757b7d14bb93028fcb90f793c5c0d367736ee815a100b3891f0}"
-config_url="${YEET_KERNEL_CONFIG_URL:-https://raw.githubusercontent.com/firecracker-microvm/firecracker/v1.14.3/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config}"
+# Firecracker's v1.14.3 config regressed no-initrd direct boot for this kernel
+# path, so default to the older upstream-known-good microVM config revision.
+config_url="${YEET_KERNEL_CONFIG_URL:-https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config}"
 localversion="${YEET_KERNEL_LOCALVERSION:--yeet}"
 
 require() {
@@ -71,6 +73,7 @@ echo "Configuring yeet Firecracker kernel..."
 		--enable VIRTIO \
 		--enable VIRTIO_MMIO \
 		--enable VIRTIO_MMIO_CMDLINE_DEVICES \
+		--enable BLK_MQ_VIRTIO \
 		--enable VIRTIO_BLK \
 		--enable VIRTIO_NET \
 		--enable EXT4_FS \
@@ -109,6 +112,7 @@ require_config() {
 
 require_config CONFIG_MODULES n
 require_config CONFIG_VIRTIO_MMIO y
+require_config CONFIG_BLK_MQ_VIRTIO y
 require_config CONFIG_VIRTIO_BLK y
 require_config CONFIG_VIRTIO_NET y
 require_config CONFIG_EXT4_FS y
