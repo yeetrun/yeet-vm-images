@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v4
+        default: ubuntu-26.04-amd64-v5
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -193,6 +193,39 @@ jobs:
           debugfs -R 'stat /usr/local/lib/yeet-vm/yeet-init' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /usr/share/doc/yeet-vm-image/init.md' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R "dump -p /usr/local/lib/yeet-vm/yeet-init $RUNNER_TEMP/yeet-init" "$RUNNER_TEMP/rootfs.ext4" >/dev/null
+          debugfs_cat() {
+            debugfs -R "cat $1" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null || true
+          }
+          assert_unit_masked() {
+            local unit="$1"
+            local link
+            link="$(debugfs -R "stat /etc/systemd/system/$unit" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F': ' '/Fast link dest:/ { print $2; exit }')"
+            if [ "$link" != "/dev/null" ]; then
+              echo "expected $unit to be masked to /dev/null, got ${link:-missing}" >&2
+              exit 1
+            fi
+          }
+          assert_package_not_installed() {
+            local package="$1"
+            if debugfs_cat "/var/lib/dpkg/status" | awk -v pkg="$package" '
+              $1 == "Package:" { package = $2 }
+              $1 == "Status:" && package == pkg && $0 ~ /install ok installed/ { found = 1 }
+              END { exit found ? 0 : 1 }
+            '; then
+              echo "expected package $package to be absent from fast image" >&2
+              exit 1
+            fi
+          }
+          assert_package_not_installed netplan.io
+          assert_package_not_installed networkd-dispatcher
+          assert_package_not_installed chrony
+          assert_package_not_installed sysstat
+          assert_unit_masked netplan-configure.service
+          assert_unit_masked networkd-dispatcher.service
+          assert_unit_masked sysstat.service
+          assert_unit_masked e2scrub_reap.service
+          assert_unit_masked ldconfig.service
+          assert_unit_masked keyboard-setup.service
           expected_guest_init_sha="$(sha256sum "$YEET_VM_INIT_BINARY" | awk '{ print $1 }')"
           embedded_guest_init_sha="$(sha256sum "$RUNNER_TEMP/yeet-init" | awk '{ print $1 }')"
           manifest_guest_init_sha="$(jq -r '.guest_init_sha256' "$OUT_DIR/manifest.json")"
