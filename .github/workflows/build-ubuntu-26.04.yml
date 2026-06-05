@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v6
+        default: ubuntu-26.04-amd64-v7
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -103,6 +103,7 @@ jobs:
             libelf-dev \
             libssl-dev \
             musl-tools \
+            ncurses-bin \
             xz-utils \
             zstd
 
@@ -192,6 +193,7 @@ jobs:
           zstd -d -f --no-progress -o "$RUNNER_TEMP/rootfs.ext4" "$OUT_DIR/rootfs.ext4.zst"
           debugfs -R 'stat /usr/local/lib/yeet-vm/yeet-init' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /usr/share/doc/yeet-vm-image/init.md' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
+          debugfs -R 'stat /etc/terminfo/x/xterm-ghostty' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R "dump -p /usr/local/lib/yeet-vm/yeet-init $RUNNER_TEMP/yeet-init" "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs_cat() {
             debugfs -R "cat $1" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null || true
