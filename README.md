@@ -81,6 +81,37 @@ The fast profile does not preinstall Tailscale or any other overlay network
 agent. Users can install and manage those services inside the VM using normal
 Ubuntu packages.
 
+## Publish a New Bundle
+
+Use the **Build Ubuntu 26.04 VM image** GitHub Actions workflow from the Actions
+tab. It is manually dispatched and runs on a GitHub-hosted Linux runner. The
+workflow checks out yeet at `yeet_ref`, builds the Rust `yeet-init`, builds the
+managed kernel, customizes the Ubuntu rootfs, verifies the bundle, and publishes
+the release assets.
+
+Inputs:
+
+- `version`: release and image version, for example `ubuntu-26.04-amd64-v12`
+- `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
+- `ubuntu_cloud_base_url`: Ubuntu cloud image directory URL
+- `ubuntu_cloud_image`: Ubuntu cloud image tarball name
+- `firecracker_version`: Firecracker release version
+- `kernel_version`: Linux kernel version to build
+- `kernel_source_url`: Linux kernel source tarball URL
+- `kernel_source_sha256`: Linux kernel source tarball SHA-256
+- `kernel_config_url`: Firecracker guest kernel config URL used as the build
+  baseline. The default is pinned to the Firecracker microVM config revision
+  used by yeet's no-initrd direct-boot image.
+- `zstd_level`: compression level for `rootfs.ext4.zst`
+- `overwrite_release`: delete an existing release/tag with the same version
+  before publishing
+
+The workflow validates `checksums.txt`, confirms the fast image has no
+`initrd.img`, checks the required kernel config values, verifies the embedded
+`yeet-init`, terminfo, router rootfs defaults, Ubuntu-compatible package paths,
+and guest init manifest metadata, prints the manifest, and publishes the
+release assets.
+
 ## Stock Profile
 
 For debugging or reproducing the old v1-style image, use the stock profile:
