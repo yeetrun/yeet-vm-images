@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v8
+        default: ubuntu-26.04-amd64-v9
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -75,6 +75,7 @@ jobs:
       YEET_VM_IMAGE_PROFILE: fast
       YEET_VM_IMAGE_WORK_DIR: ${{ github.workspace }}/.build-work
       YEET_VM_INIT_BINARY: ${{ github.workspace }}/yeet-src/guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init
+      YEET_VM_GHOSTTY_TERMINFO: ${{ github.workspace }}/assets/xterm-ghostty.terminfo
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -132,6 +133,7 @@ jobs:
             YEET_VM_IMAGE_PROFILE="$YEET_VM_IMAGE_PROFILE" \
             YEET_VM_IMAGE_VERSION="$YEET_VM_IMAGE_VERSION" \
             YEET_VM_IMAGE_WORK_DIR="$YEET_VM_IMAGE_WORK_DIR" \
+            YEET_VM_GHOSTTY_TERMINFO="$YEET_VM_GHOSTTY_TERMINFO" \
             YEET_VM_INIT_PATH="$YEET_VM_INIT_BINARY" \
             YEET_VM_KERNEL_PATH="$GITHUB_WORKSPACE/$KERNEL_OUT_DIR/vmlinux" \
             YEET_VM_KERNEL_VERSION="linux-${YEET_KERNEL_VERSION}-yeet" \
@@ -190,10 +192,36 @@ jobs:
           grep -q '^CONFIG_EXT4_FS=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_IP_PNP=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_IP_PNP_DHCP=y$' "$OUT_DIR/kernel.config"
+          for config in \
+            CONFIG_TUN \
+            CONFIG_NETFILTER \
+            CONFIG_NETFILTER_ADVANCED \
+            CONFIG_NETFILTER_XTABLES \
+            CONFIG_NF_CONNTRACK \
+            CONFIG_NF_NAT \
+            CONFIG_NF_NAT_MASQUERADE \
+            CONFIG_NF_TABLES \
+            CONFIG_NF_TABLES_IPV4 \
+            CONFIG_NFT_CT \
+            CONFIG_NFT_NAT \
+            CONFIG_NFT_MASQ \
+            CONFIG_NFT_COMPAT \
+            CONFIG_NETFILTER_XT_TARGET_MASQUERADE \
+            CONFIG_NETFILTER_XT_TARGET_MARK \
+            CONFIG_NETFILTER_XT_NAT \
+            CONFIG_NETFILTER_XT_MATCH_MARK \
+            CONFIG_NETFILTER_XT_MATCH_COMMENT \
+            CONFIG_NETFILTER_XT_MATCH_CONNTRACK \
+            CONFIG_NETFILTER_XT_MATCH_ADDRTYPE
+          do
+            grep -q "^${config}=y$" "$OUT_DIR/kernel.config"
+          done
           zstd -d -f --no-progress -o "$RUNNER_TEMP/rootfs.ext4" "$OUT_DIR/rootfs.ext4.zst"
           debugfs -R 'stat /usr/local/lib/yeet-vm/yeet-init' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /usr/share/doc/yeet-vm-image/init.md' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/terminfo/x/xterm-ghostty' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
+          debugfs -R 'stat /etc/sysctl.d/99-yeet-vm-router.conf' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
+          debugfs -R 'stat /etc/tmpfiles.d/yeet-vm-tun.conf' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R "dump -p /usr/local/lib/yeet-vm/yeet-init $RUNNER_TEMP/yeet-init" "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs_cat() {
             debugfs -R "cat $1" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null || true
@@ -228,6 +256,19 @@ jobs:
               exit 1
             fi
           }
+          assert_package_installed() {
+            local package="$1"
+            if ! debugfs_cat "/var/lib/dpkg/status" | awk -v pkg="$package" '
+              $1 == "Package:" { package = $2 }
+              $1 == "Status:" && package == pkg && $0 ~ /install ok installed/ { found = 1 }
+              END { exit found ? 0 : 1 }
+            '; then
+              echo "expected package $package to be installed in fast image" >&2
+              exit 1
+            fi
+          }
+          assert_package_installed iptables
+          assert_package_installed nftables
           assert_package_not_installed netplan.io
           assert_package_not_installed networkd-dispatcher
           assert_package_not_installed chrony
@@ -262,6 +303,8 @@ jobs:
           assert_unit_masked modprobe@drm.service
           assert_unit_masked modprobe@efi_pstore.service
           assert_unit_masked modprobe@fuse.service
+          debugfs_cat /etc/sysctl.d/99-yeet-vm-router.conf | grep -q '^net.ipv4.ip_forward = 1$'
+          debugfs_cat /etc/tmpfiles.d/yeet-vm-tun.conf | grep -q '^c /dev/net/tun 0666 root root 10:200$'
           expected_guest_init_sha="$(sha256sum "$YEET_VM_INIT_BINARY" | awk '{ print $1 }')"
           embedded_guest_init_sha="$(sha256sum "$RUNNER_TEMP/yeet-init" | awk '{ print $1 }')"
           manifest_guest_init_sha="$(jq -r '.guest_init_sha256' "$OUT_DIR/manifest.json")"
