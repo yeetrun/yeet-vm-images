@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v7
+        default: ubuntu-26.04-amd64-v8
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -207,6 +207,16 @@ jobs:
               exit 1
             fi
           }
+          assert_symlink_target() {
+            local path="$1"
+            local target="$2"
+            local link
+            link="$(debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F': ' '/Fast link dest:/ { gsub(/^"|"$/, "", $2); print $2; exit }')"
+            if [ "$link" != "$target" ]; then
+              echo "expected $path to point to $target, got ${link:-missing}" >&2
+              exit 1
+            fi
+          }
           assert_package_not_installed() {
             local package="$1"
             if debugfs_cat "/var/lib/dpkg/status" | awk -v pkg="$package" '
@@ -222,10 +232,28 @@ jobs:
           assert_package_not_installed networkd-dispatcher
           assert_package_not_installed chrony
           assert_package_not_installed sysstat
+          assert_package_not_installed fwupd
+          assert_package_not_installed fwupd-signed
+          assert_package_not_installed update-notifier-common
+          assert_package_not_installed update-manager-core
+          assert_package_not_installed xfsprogs
+          assert_symlink_target /usr/sbin bin
+          assert_symlink_target /sbin usr/bin
           assert_unit_masked netplan-configure.service
           assert_unit_masked networkd-dispatcher.service
           assert_unit_masked sysstat.service
           assert_unit_masked e2scrub_reap.service
+          assert_unit_masked fwupd.service
+          assert_unit_masked fwupd-refresh.service
+          assert_unit_masked fwupd-refresh.timer
+          assert_unit_masked update-notifier-download.service
+          assert_unit_masked update-notifier-download.timer
+          assert_unit_masked update-notifier-motd.service
+          assert_unit_masked update-notifier-motd.timer
+          assert_unit_masked xfs_scrub_all.service
+          assert_unit_masked xfs_scrub_all.timer
+          assert_unit_masked proc-sys-fs-binfmt_misc.automount
+          assert_unit_masked proc-sys-fs-binfmt_misc.mount
           assert_unit_masked ldconfig.service
           assert_unit_masked keyboard-setup.service
           assert_unit_masked systemd-modules-load.service
