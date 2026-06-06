@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v10
+        default: ubuntu-26.04-amd64-v11
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -194,6 +194,8 @@ jobs:
           grep -q '^CONFIG_IP_PNP_DHCP=y$' "$OUT_DIR/kernel.config"
           for config in \
             CONFIG_TUN \
+            CONFIG_IPV6 \
+            CONFIG_IPV6_MULTIPLE_TABLES \
             CONFIG_NETFILTER \
             CONFIG_NETFILTER_ADVANCED \
             CONFIG_NETFILTER_XTABLES \
@@ -203,9 +205,13 @@ jobs:
             CONFIG_NF_NAT_MASQUERADE \
             CONFIG_NF_TABLES \
             CONFIG_NF_TABLES_IPV4 \
+            CONFIG_NF_TABLES_IPV6 \
+            CONFIG_NF_TABLES_INET \
             CONFIG_NFT_CT \
             CONFIG_NFT_NAT \
             CONFIG_NFT_MASQ \
+            CONFIG_NFT_REJECT \
+            CONFIG_NFT_REJECT_INET \
             CONFIG_NFT_COMPAT \
             CONFIG_NETFILTER_XT_TARGET_CONNMARK \
             CONFIG_NETFILTER_XT_TARGET_MASQUERADE \
@@ -215,7 +221,12 @@ jobs:
             CONFIG_NETFILTER_XT_MATCH_MARK \
             CONFIG_NETFILTER_XT_MATCH_COMMENT \
             CONFIG_NETFILTER_XT_MATCH_CONNTRACK \
-            CONFIG_NETFILTER_XT_MATCH_ADDRTYPE
+            CONFIG_NETFILTER_XT_MATCH_ADDRTYPE \
+            CONFIG_IP6_NF_IPTABLES \
+            CONFIG_IP6_NF_FILTER \
+            CONFIG_IP6_NF_MANGLE \
+            CONFIG_IP6_NF_NAT \
+            CONFIG_IP6_NF_TARGET_MASQUERADE
           do
             grep -q "^${config}=y$" "$OUT_DIR/kernel.config"
           done
@@ -307,6 +318,7 @@ jobs:
           assert_unit_masked modprobe@efi_pstore.service
           assert_unit_masked modprobe@fuse.service
           debugfs_cat /etc/sysctl.d/99-yeet-vm-router.conf | grep -q '^net.ipv4.ip_forward = 1$'
+          debugfs_cat /etc/sysctl.d/99-yeet-vm-router.conf | grep -q '^net.ipv6.conf.all.forwarding = 1$'
           debugfs_cat /etc/tmpfiles.d/yeet-vm-tun.conf | grep -q '^c /dev/net/tun 0666 root root 10:200$'
           expected_guest_init_sha="$(sha256sum "$YEET_VM_INIT_BINARY" | awk '{ print $1 }')"
           embedded_guest_init_sha="$(sha256sum "$RUNNER_TEMP/yeet-init" | awk '{ print $1 }')"
