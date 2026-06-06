@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v11
+        default: ubuntu-26.04-amd64-v12
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -256,6 +256,40 @@ jobs:
               exit 1
             fi
           }
+          assert_debugfs_type() {
+            local path="$1"
+            local want="$2"
+            local got
+            got="$(debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk '
+              /Type:/ {
+                for (i = 1; i <= NF; i++) {
+                  if ($i == "Type:") {
+                    print $(i + 1)
+                    exit
+                  }
+                }
+              }
+            ')"
+            if [ "$got" != "$want" ]; then
+              echo "expected $path type $want, got ${got:-missing}" >&2
+              exit 1
+            fi
+          }
+          assert_path_exists() {
+            local path="$1"
+            if ! debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" >/dev/null 2>&1; then
+              echo "expected $path to exist" >&2
+              exit 1
+            fi
+          }
+          assert_dpkg_list_contains() {
+            local package="$1"
+            local path="$2"
+            if ! debugfs_cat "/var/lib/dpkg/info/${package}.list" | grep -qx "$path"; then
+              echo "expected package $package to own $path" >&2
+              exit 1
+            fi
+          }
           assert_package_not_installed() {
             local package="$1"
             if debugfs_cat "/var/lib/dpkg/status" | awk -v pkg="$package" '
@@ -289,8 +323,22 @@ jobs:
           assert_package_not_installed update-notifier-common
           assert_package_not_installed update-manager-core
           assert_package_not_installed xfsprogs
-          assert_symlink_target /usr/sbin bin
-          assert_symlink_target /sbin usr/bin
+          assert_debugfs_type /usr/sbin directory
+          assert_symlink_target /sbin usr/sbin
+          for path in \
+            /usr/sbin/sshd \
+            /usr/sbin/agetty \
+            /usr/sbin/unix_chkpwd \
+            /usr/sbin/iptables-nft \
+            /usr/sbin/xtables-nft-multi
+          do
+            assert_path_exists "$path"
+          done
+          assert_dpkg_list_contains openssh-server /usr/sbin/sshd
+          assert_dpkg_list_contains util-linux /usr/sbin/agetty
+          assert_dpkg_list_contains libpam-modules-bin /usr/sbin/unix_chkpwd
+          assert_dpkg_list_contains iptables /usr/sbin/iptables-nft
+          assert_dpkg_list_contains iptables /usr/sbin/xtables-nft-multi
           assert_unit_masked netplan-configure.service
           assert_unit_masked networkd-dispatcher.service
           assert_unit_masked sysstat.service
