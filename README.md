@@ -2,7 +2,7 @@
 
 The v0 VM payload is `vm://ubuntu/26.04`.
 
-The current fast bundle version is `ubuntu-26.04-amd64-v9`. It is built from
+The current fast bundle version is `ubuntu-26.04-amd64-v10`. It is built from
 the official Ubuntu 26.04 cloud image, boots a yeet-managed kernel under
 Firecracker direct kernel boot, uses `/usr/local/lib/yeet-vm/yeet-init` as the
 pre-systemd init shim, and omits `initrd.img`.
@@ -26,9 +26,9 @@ The default build profile is `fast`. It requires a kernel that already has the
 Firecracker boot path built in. The kernel builder pins the Firecracker microVM
 config revision used by yeet's no-initrd direct-boot image and enables kernel IP
 autoconfiguration for the first VM interface. It also builds in TUN, netfilter,
-conntrack, nftables, nft NAT/masquerade, and the nft compatibility support
-needed by Ubuntu's `iptables-nft` userspace so guest-installed router software
-can run without loadable kernel modules:
+conntrack, conntrack marks, nftables, nft NAT/masquerade, and the nft
+compatibility support needed by Ubuntu's `iptables-nft` userspace so
+guest-installed router software can run without loadable kernel modules:
 
 ```bash
 scripts/build-linux-kernel.sh dist/kernel-linux-7.0
@@ -90,7 +90,7 @@ the release assets.
 
 Inputs:
 
-- `version`: release and image version, for example `ubuntu-26.04-amd64-v9`
+- `version`: release and image version, for example `ubuntu-26.04-amd64-v10`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `ubuntu_cloud_base_url`: Ubuntu cloud image directory URL
 - `ubuntu_cloud_image`: Ubuntu cloud image tarball name

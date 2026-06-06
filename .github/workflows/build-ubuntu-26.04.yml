@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v9
+        default: ubuntu-26.04-amd64-v10
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -198,6 +198,7 @@ jobs:
             CONFIG_NETFILTER_ADVANCED \
             CONFIG_NETFILTER_XTABLES \
             CONFIG_NF_CONNTRACK \
+            CONFIG_NF_CONNTRACK_MARK \
             CONFIG_NF_NAT \
             CONFIG_NF_NAT_MASQUERADE \
             CONFIG_NF_TABLES \
@@ -206,9 +207,11 @@ jobs:
             CONFIG_NFT_NAT \
             CONFIG_NFT_MASQ \
             CONFIG_NFT_COMPAT \
+            CONFIG_NETFILTER_XT_TARGET_CONNMARK \
             CONFIG_NETFILTER_XT_TARGET_MASQUERADE \
             CONFIG_NETFILTER_XT_TARGET_MARK \
             CONFIG_NETFILTER_XT_NAT \
+            CONFIG_NETFILTER_XT_MATCH_CONNMARK \
             CONFIG_NETFILTER_XT_MATCH_MARK \
             CONFIG_NETFILTER_XT_MATCH_COMMENT \
             CONFIG_NETFILTER_XT_MATCH_CONNTRACK \
