@@ -211,6 +211,7 @@ jobs:
             CONFIG_NFT_NAT \
             CONFIG_NFT_MASQ \
             CONFIG_NFT_REJECT \
+            CONFIG_NFT_REJECT_IPV6 \
             CONFIG_NFT_REJECT_INET \
             CONFIG_NFT_COMPAT \
             CONFIG_NETFILTER_XT_TARGET_CONNMARK \
@@ -222,11 +223,7 @@ jobs:
             CONFIG_NETFILTER_XT_MATCH_COMMENT \
             CONFIG_NETFILTER_XT_MATCH_CONNTRACK \
             CONFIG_NETFILTER_XT_MATCH_ADDRTYPE \
-            CONFIG_IP6_NF_IPTABLES \
-            CONFIG_IP6_NF_FILTER \
-            CONFIG_IP6_NF_MANGLE \
-            CONFIG_IP6_NF_NAT \
-            CONFIG_IP6_NF_TARGET_MASQUERADE
+            CONFIG_IP6_NF_IPTABLES
           do
             grep -q "^${config}=y$" "$OUT_DIR/kernel.config"
           done

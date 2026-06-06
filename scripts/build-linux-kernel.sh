@@ -106,6 +106,7 @@ echo "Configuring yeet Firecracker kernel..."
 		--enable NFT_NAT \
 		--enable NFT_MASQ \
 		--enable NFT_REJECT \
+		--enable NFT_REJECT_IPV6 \
 		--enable NFT_REJECT_INET \
 		--enable NFT_COMPAT \
 		--enable NETFILTER_XT_TARGET_CONNMARK \
@@ -118,10 +119,6 @@ echo "Configuring yeet Firecracker kernel..."
 		--enable NETFILTER_XT_MATCH_CONNTRACK \
 		--enable NETFILTER_XT_MATCH_ADDRTYPE \
 		--enable IP6_NF_IPTABLES \
-		--enable IP6_NF_FILTER \
-		--enable IP6_NF_MANGLE \
-		--enable IP6_NF_NAT \
-		--enable IP6_NF_TARGET_MASQUERADE \
 		--set-str LOCALVERSION "$localversion"
 	make olddefconfig
 )
@@ -174,6 +171,7 @@ require_config CONFIG_NFT_CT y
 require_config CONFIG_NFT_NAT y
 require_config CONFIG_NFT_MASQ y
 require_config CONFIG_NFT_REJECT y
+require_config CONFIG_NFT_REJECT_IPV6 y
 require_config CONFIG_NFT_REJECT_INET y
 require_config CONFIG_NFT_COMPAT y
 require_config CONFIG_NETFILTER_XT_TARGET_CONNMARK y
@@ -186,10 +184,6 @@ require_config CONFIG_NETFILTER_XT_MATCH_COMMENT y
 require_config CONFIG_NETFILTER_XT_MATCH_CONNTRACK y
 require_config CONFIG_NETFILTER_XT_MATCH_ADDRTYPE y
 require_config CONFIG_IP6_NF_IPTABLES y
-require_config CONFIG_IP6_NF_FILTER y
-require_config CONFIG_IP6_NF_MANGLE y
-require_config CONFIG_IP6_NF_NAT y
-require_config CONFIG_IP6_NF_TARGET_MASQUERADE y
 
 echo "Building vmlinux..."
 make -C "$src_dir" -j"$(nproc)" vmlinux
