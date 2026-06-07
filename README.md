@@ -1,13 +1,13 @@
-# Yeet Ubuntu VM Image
+# Yeet VM Images
 
-The v0 VM payload is `vm://ubuntu/26.04`.
+This repository builds and publishes official yeet VM image bundles.
 
-The current fast bundle version is `ubuntu-26.04-amd64-v13`. It is built from
-the official Ubuntu 26.04 cloud image, boots a yeet-managed kernel under
-Firecracker direct kernel boot, uses `/usr/local/lib/yeet-vm/yeet-init` as the
-pre-systemd init shim, and omits `initrd.img`.
+Official payloads:
 
-Release asset names:
+- `vm://ubuntu/26.04`
+- `vm://nixos/26.05`
+
+Each bundle includes:
 
 - `manifest.json`
 - `vmlinux`
@@ -16,19 +16,31 @@ Release asset names:
 - `kernel.config`
 - `checksums.txt`
 
-The manifest URL used by catch is:
+Ubuntu uses the latest GitHub release manifest:
 
 `https://github.com/yeetrun/yeet-vm-images/releases/latest/download/manifest.json`
 
-## Fast Profile
+NixOS publishes both immutable version releases and a stable latest alias:
 
-The default build profile is `fast`. It requires a kernel that already has the
-Firecracker boot path built in. The kernel builder pins the Firecracker microVM
-config revision used by yeet's no-initrd direct-boot image and enables kernel IP
-autoconfiguration for the first VM interface. It also builds in TUN, IPv6,
-netfilter, conntrack, conntrack marks, nftables, nft NAT/masquerade, and the
-nft compatibility support needed by Ubuntu's `iptables-nft` userspace so
-guest-installed router software can run without loadable kernel modules:
+`https://github.com/yeetrun/yeet-vm-images/releases/download/nixos-26.05-amd64-latest/manifest.json`
+
+## Ubuntu 26.04
+
+The current Ubuntu bundle version is `ubuntu-26.04-amd64-v13`. It is built from
+the official Ubuntu 26.04 cloud image, boots a yeet-managed kernel under
+Firecracker direct kernel boot, uses `/usr/local/lib/yeet-vm/yeet-init` as the
+pre-systemd init shim, and omits `initrd.img`.
+
+### Fast Profile
+
+The default Ubuntu build profile is `fast`. It requires a kernel that already
+has the Firecracker boot path built in. The kernel builder pins the
+Firecracker microVM config revision used by yeet's no-initrd direct-boot image
+and enables kernel IP autoconfiguration for the first VM interface. It also
+builds in TUN, IPv6, netfilter, conntrack, conntrack marks, nftables, nft
+NAT/masquerade, and the nft compatibility support needed by Ubuntu's
+`iptables-nft` userspace so guest-installed router software can run without
+loadable kernel modules:
 
 ```bash
 scripts/build-linux-kernel.sh dist/kernel-linux-7.0
@@ -83,13 +95,71 @@ The fast profile does not preinstall Tailscale or any other overlay network
 agent. Users can install and manage those services inside the VM using normal
 Ubuntu packages.
 
+### Stock Profile
+
+For debugging or reproducing the old v1-style image, use the stock profile:
+
+```bash
+YEET_VM_IMAGE_PROFILE=stock \
+  YEET_VM_IMAGE_VERSION=ubuntu-26.04-amd64-v1 \
+  scripts/build-ubuntu-26.04.sh
+```
+
+The stock profile extracts Ubuntu's generic kernel from the cloud image and
+includes `initrd.img`. It does not apply the yeet-managed kernel or no-snap
+rootfs policy.
+
+## NixOS 26.05
+
+The NixOS bundle is built from a flake-pinned `nixpkgs` input using NixOS
+modules. It boots the same yeet-managed Firecracker kernel and uses the same
+Rust `yeet-init` pre-systemd shim as Ubuntu, but the guest operating system is
+configured through normal NixOS declarations.
+
+NixOS image metadata:
+
+- `default_user`: `nixos`
+- `metadata_driver`: `nixos`
+- `guest_init`: `/usr/local/lib/yeet-vm/yeet-init`
+- `guest_system_init`: `/run/current-system/init`
+
+The NixOS module:
+
+- keeps `/etc/nixos/configuration.nix` and `/etc/nixos/yeet-vm.nix` in the
+  guest so users can inspect and rebuild the system normally;
+- uses systemd-networkd and copies yeet-provided network snippets from
+  `/etc/yeet-vm/systemd-network` into `/run/systemd/network` at boot;
+- reads the VM hostname from `/etc/yeet-vm/hostname`;
+- reads SSH authorized keys from `/etc/yeet-vm/authorized_keys` for the
+  `nixos` user through OpenSSH's `AuthorizedKeysCommand`;
+- installs practical base tools, nftables/iptables userspace, Ghostty terminfo,
+  and Nix flakes support;
+- provides `/dev/net/tun` through tmpfiles for guest-managed tunnel software.
+
+The NixOS image does not preinstall Tailscale or other application services.
+Users who want Tailscale should enable it through their NixOS configuration,
+for example with `services.tailscale.enable = true;`, then rebuild the system
+inside the VM.
+
+Local build:
+
+```bash
+scripts/build-linux-kernel.sh dist/kernel-linux-7.0
+YEET_VM_KERNEL_PATH="$PWD/dist/kernel-linux-7.0/vmlinux" \
+  YEET_VM_KERNEL_VERSION=linux-7.0-yeet \
+  YEET_SOURCE_PATH="$PWD/../yeet" \
+  scripts/build-nixos-26.05.sh
+```
+
 ## Publish a New Bundle
 
-Use the **Build Ubuntu 26.04 VM image** GitHub Actions workflow from the Actions
-tab. It is manually dispatched and runs on a GitHub-hosted Linux runner. The
-workflow checks out yeet at `yeet_ref`, builds the Rust `yeet-init`, builds the
-managed kernel, customizes the Ubuntu rootfs, verifies the bundle, and publishes
-the release assets.
+### Ubuntu
+
+Use the **Build Ubuntu 26.04 VM image** GitHub Actions workflow from the
+Actions tab. It is manually dispatched and runs on a GitHub-hosted Linux
+runner. The workflow checks out yeet at `yeet_ref`, builds the Rust
+`yeet-init`, builds the managed kernel, customizes the Ubuntu rootfs, verifies
+the bundle, and publishes the release assets.
 
 Inputs:
 
@@ -114,16 +184,30 @@ The workflow validates `checksums.txt`, confirms the fast image has no
 host-compatible ext4 rootfs features, and guest init manifest metadata, prints
 the manifest, and publishes the release assets.
 
-## Stock Profile
+### NixOS
 
-For debugging or reproducing the old v1-style image, use the stock profile:
+Use the **Build NixOS 26.05 VM image** GitHub Actions workflow. It checks out
+yeet at `yeet_ref`, builds the managed kernel, builds the NixOS rootfs from the
+flake, verifies the bundle, publishes an immutable version release, and can
+also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
-```bash
-YEET_VM_IMAGE_PROFILE=stock \
-  YEET_VM_IMAGE_VERSION=ubuntu-26.04-amd64-v1 \
-  scripts/build-ubuntu-26.04.sh
-```
+Inputs:
 
-The stock profile extracts Ubuntu's generic kernel from the cloud image and
-includes `initrd.img`. It does not apply the yeet-managed kernel or no-snap
-rootfs policy.
+- `version`: release and image version, for example `nixos-26.05-amd64-v1`
+- `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
+- `kernel_version`: Linux kernel version to build
+- `kernel_source_url`: Linux kernel source tarball URL
+- `kernel_source_sha256`: Linux kernel source tarball SHA-256
+- `kernel_config_url`: Firecracker guest kernel config URL used as the build
+  baseline
+- `firecracker_version`: Firecracker release version
+- `zstd_level`: compression level for `rootfs.ext4.zst`
+- `overwrite_release`: delete an existing release/tag with the same version
+  before publishing
+- `publish_latest_alias`: update the stable NixOS latest alias after publishing
+  the immutable version release
+
+The workflow validates `checksums.txt`, checks the required kernel config
+values, verifies NixOS system links, confirms the embedded `yeet-init`, checks
+the Ghostty terminfo source, verifies NixOS manifest metadata, prints the
+manifest, and publishes the release assets.

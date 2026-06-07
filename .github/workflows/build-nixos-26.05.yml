@@ -1,0 +1,327 @@
+name: Build NixOS 26.05 VM image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release/image version to publish.
+        required: true
+        default: nixos-26.05-amd64-v1
+      yeet_ref:
+        description: yeet repository ref used to build guest/yeet-init.
+        required: true
+        default: main
+      firecracker_version:
+        description: Firecracker release version.
+        required: true
+        default: v1.14.3
+      kernel_version:
+        description: Linux kernel version to build.
+        required: true
+        default: "7.0"
+      kernel_source_url:
+        description: Linux kernel source tarball URL.
+        required: true
+        default: https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.0.tar.xz
+      kernel_source_sha256:
+        description: Linux kernel source tarball SHA-256.
+        required: true
+        default: bb7f6d80b387c757b7d14bb93028fcb90f793c5c0d367736ee815a100b3891f0
+      kernel_config_url:
+        description: Firecracker guest kernel config URL.
+        required: true
+        default: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
+      zstd_level:
+        description: zstd compression level for rootfs.ext4.zst.
+        required: true
+        default: "10"
+      overwrite_release:
+        description: Delete an existing release/tag with the same version before publishing.
+        required: true
+        type: boolean
+        default: false
+      publish_latest_alias:
+        description: Publish or refresh the catch-facing latest alias release.
+        required: true
+        type: boolean
+        default: true
+      latest_alias:
+        description: Release/tag name for the catch-facing latest alias.
+        required: true
+        default: nixos-26.05-amd64-latest
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and publish NixOS image bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    env:
+      VERSION: ${{ inputs.version }}
+      LATEST_ALIAS: ${{ inputs.latest_alias }}
+      OUT_DIR: dist/${{ inputs.version }}
+      FIRECRACKER_VERSION: ${{ inputs.firecracker_version }}
+      KERNEL_OUT_DIR: dist/kernel-linux-${{ inputs.kernel_version }}
+      ZSTD_LEVEL: ${{ inputs.zstd_level }}
+      YEET_KERNEL_VERSION: ${{ inputs.kernel_version }}
+      YEET_KERNEL_SOURCE_URL: ${{ inputs.kernel_source_url }}
+      YEET_KERNEL_SOURCE_SHA256: ${{ inputs.kernel_source_sha256 }}
+      YEET_KERNEL_CONFIG_URL: ${{ inputs.kernel_config_url }}
+      YEET_KERNEL_WORK_DIR: ${{ github.workspace }}/.kernel-build-work
+      YEET_VM_IMAGE_VERSION: ${{ inputs.version }}
+      YEET_VM_IMAGE_WORK_DIR: ${{ github.workspace }}/.build-work
+      YEET_SOURCE_PATH: ${{ github.workspace }}/yeet-src
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout yeet source
+        uses: actions/checkout@v4
+        with:
+          repository: yeetrun/yeet
+          ref: ${{ inputs.yeet_ref }}
+          path: yeet-src
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            curl \
+            dwarves \
+            e2fsprogs \
+            file \
+            flex \
+            jq \
+            libelf-dev \
+            libssl-dev \
+            xz-utils \
+            zstd
+
+      - name: Install Nix
+        run: |
+          curl -L https://nixos.org/nix/install -o /tmp/install-nix
+          sh /tmp/install-nix --daemon
+          echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"
+
+      - name: Build yeet-managed kernel
+        run: |
+          scripts/build-linux-kernel.sh "$KERNEL_OUT_DIR"
+
+      - name: Build image bundle
+        run: |
+          scripts/build-nixos-26.05.sh "$OUT_DIR"
+
+      - name: Verify bundle
+        run: |
+          set -euo pipefail
+          for asset in manifest.json vmlinux rootfs.ext4.zst firecracker kernel.config checksums.txt; do
+            test -s "$OUT_DIR/$asset"
+          done
+          if [ -e "$OUT_DIR/initrd.img" ]; then
+            echo "NixOS image bundle must not include initrd.img" >&2
+            exit 1
+          fi
+          (
+            cd "$OUT_DIR"
+            sha256sum -c checksums.txt
+          )
+          check_manifest_checksum() {
+            local asset="$1"
+            local want
+            local got
+            want="$(jq -r --arg asset "$asset" '.checksums[$asset] // empty' "$OUT_DIR/manifest.json")"
+            if [ -z "$want" ]; then
+              echo "manifest missing checksum for $asset" >&2
+              exit 1
+            fi
+            got="$(sha256sum "$OUT_DIR/$asset" | awk '{ print $1 }')"
+            if [ "$got" != "$want" ]; then
+              echo "manifest checksum mismatch for $asset: got $got, want $want" >&2
+              exit 1
+            fi
+          }
+          check_manifest_checksum vmlinux
+          check_manifest_checksum kernel.config
+          check_manifest_checksum rootfs.ext4.zst
+          check_manifest_checksum firecracker
+          jq -e '
+            .name == "yeet-nixos-26.05" and
+            .distro == "nixos" and
+            .distro_version == "26.05" and
+            .default_user == "nixos" and
+            .metadata_driver == "nixos" and
+            .guest_init == "/usr/local/lib/yeet-vm/yeet-init" and
+            .guest_system_init == "/run/current-system/init" and
+            (.guest_init_sha256 | test("^[0-9a-f]{64}$")) and
+            .kernel == "vmlinux" and
+            .rootfs == "rootfs.ext4.zst" and
+            .kernel_policy == "yeet-managed"
+          ' "$OUT_DIR/manifest.json"
+          grep -q '^# CONFIG_MODULES is not set$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_VIRTIO_MMIO=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_VIRTIO_BLK=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_VIRTIO_NET=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_EXT4_FS=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_IP_PNP=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_IP_PNP_DHCP=y$' "$OUT_DIR/kernel.config"
+          for config in \
+            CONFIG_TUN \
+            CONFIG_IPV6 \
+            CONFIG_IPV6_MULTIPLE_TABLES \
+            CONFIG_NETFILTER \
+            CONFIG_NETFILTER_ADVANCED \
+            CONFIG_NETFILTER_XTABLES \
+            CONFIG_NF_CONNTRACK \
+            CONFIG_NF_CONNTRACK_MARK \
+            CONFIG_NF_NAT \
+            CONFIG_NF_NAT_MASQUERADE \
+            CONFIG_NF_TABLES \
+            CONFIG_NF_TABLES_IPV4 \
+            CONFIG_NF_TABLES_IPV6 \
+            CONFIG_NF_TABLES_INET \
+            CONFIG_NFT_CT \
+            CONFIG_NFT_NAT \
+            CONFIG_NFT_MASQ \
+            CONFIG_NFT_REJECT \
+            CONFIG_NFT_REJECT_IPV6 \
+            CONFIG_NFT_REJECT_INET \
+            CONFIG_NFT_COMPAT \
+            CONFIG_NETFILTER_XT_TARGET_CONNMARK \
+            CONFIG_NETFILTER_XT_TARGET_MASQUERADE \
+            CONFIG_NETFILTER_XT_TARGET_MARK \
+            CONFIG_NETFILTER_XT_NAT \
+            CONFIG_NETFILTER_XT_MATCH_CONNMARK \
+            CONFIG_NETFILTER_XT_MATCH_MARK \
+            CONFIG_NETFILTER_XT_MATCH_COMMENT \
+            CONFIG_NETFILTER_XT_MATCH_CONNTRACK \
+            CONFIG_NETFILTER_XT_MATCH_ADDRTYPE \
+            CONFIG_IP6_NF_IPTABLES
+          do
+            grep -q "^${config}=y$" "$OUT_DIR/kernel.config"
+          done
+          zstd -d -f --no-progress -o "$RUNNER_TEMP/rootfs.ext4" "$OUT_DIR/rootfs.ext4.zst"
+          rootfs_features="$(dumpe2fs -h "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F: '/Filesystem features/ { print $2; exit }')"
+          if printf '%s\n' "$rootfs_features" | grep -Eq '(^|[[:space:]])orphan_file($|[[:space:]])|(^|[[:space:]])FEATURE_'; then
+            echo "rootfs ext4 features are not compatible with common LTS host tooling: $rootfs_features" >&2
+            exit 1
+          fi
+          assert_path_exists() {
+            local path="$1"
+            if ! debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" >/dev/null 2>&1; then
+              echo "expected $path to exist" >&2
+              exit 1
+            fi
+          }
+          assert_symlink_target() {
+            local path="$1"
+            local target="$2"
+            local link
+            link="$(debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F': ' '/Fast link dest:/ { gsub(/^"|"$/, "", $2); print $2; exit }')"
+            if [ "$link" != "$target" ]; then
+              echo "expected $path to point to $target, got ${link:-missing}" >&2
+              exit 1
+            fi
+          }
+          assert_path_exists /etc/nixos/configuration.nix
+          assert_path_exists /etc/nixos/yeet-vm.nix
+          assert_path_exists /etc/nixos/assets/xterm-ghostty.terminfo
+          assert_path_exists /etc/yeet-vm/systemd-network
+          assert_path_exists /nix/var/nix/profiles/system-1-link
+          assert_symlink_target /nix/var/nix/profiles/system system-1-link
+          assert_symlink_target /run/current-system /nix/var/nix/profiles/system
+          yeet_init_link="$(debugfs -R "stat /usr/local/lib/yeet-vm/yeet-init" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F': ' '/Fast link dest:/ { gsub(/^"|"$/, "", $2); print $2; exit }')"
+          case "$yeet_init_link" in
+            /nix/store/*/bin/yeet-init)
+              ;;
+            *)
+              echo "expected /usr/local/lib/yeet-vm/yeet-init to point at a Nix store yeet-init binary, got ${yeet_init_link:-missing}" >&2
+              exit 1
+              ;;
+          esac
+          assert_path_exists "$yeet_init_link"
+          jq . "$OUT_DIR/manifest.json"
+
+      - name: Prepare release notes
+        run: |
+          set -euo pipefail
+          kernel_version="$(jq -r '.kernel_version' "$OUT_DIR/manifest.json")"
+          nixpkgs_rev="$(jq -r '.provenance.nixpkgs_rev' "$OUT_DIR/manifest.json")"
+          firecracker_version="$(jq -r '.provenance.firecracker_version' "$OUT_DIR/manifest.json")"
+          cat >"$OUT_DIR/release-notes.md" <<EOF
+          Official yeet NixOS 26.05 amd64 VM image bundle.
+
+          - Version: \`$VERSION\`
+          - Kernel: \`$kernel_version\`
+          - Nixpkgs: \`nixos-26.05\` (\`$nixpkgs_rev\`)
+          - Metadata driver: \`nixos\`
+          - Firecracker: \`$firecracker_version\`
+
+          See \`manifest.json\` for full checksums and provenance.
+          EOF
+
+      - name: Check release target
+        run: |
+          set -euo pipefail
+          overwrite="${{ inputs.overwrite_release }}"
+          release_exists=0
+          tag_exists=0
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            release_exists=1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            tag_exists=1
+          fi
+          if [ "$release_exists" -eq 0 ] && [ "$tag_exists" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$overwrite" != "true" ]; then
+            echo "Release or tag $VERSION already exists. Re-run with overwrite_release=true to replace it." >&2
+            exit 1
+          fi
+          if [ "$release_exists" -eq 1 ]; then
+            gh release delete "$VERSION" --cleanup-tag --yes
+          elif [ "$tag_exists" -eq 1 ]; then
+            git push origin ":refs/tags/$VERSION"
+          fi
+
+      - name: Publish release
+        run: |
+          gh release create "$VERSION" \
+            "$OUT_DIR/manifest.json" \
+            "$OUT_DIR/vmlinux" \
+            "$OUT_DIR/rootfs.ext4.zst" \
+            "$OUT_DIR/firecracker" \
+            "$OUT_DIR/kernel.config" \
+            "$OUT_DIR/checksums.txt" \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --notes-file "$OUT_DIR/release-notes.md"
+
+      - name: Publish latest alias
+        if: ${{ inputs.publish_latest_alias }}
+        run: |
+          set -euo pipefail
+          if gh release view "$LATEST_ALIAS" >/dev/null 2>&1; then
+            gh release delete "$LATEST_ALIAS" --cleanup-tag --yes
+          elif git ls-remote --exit-code --tags origin "refs/tags/$LATEST_ALIAS" >/dev/null 2>&1; then
+            git push origin ":refs/tags/$LATEST_ALIAS"
+          fi
+          gh release create "$LATEST_ALIAS" \
+            "$OUT_DIR/manifest.json" \
+            "$OUT_DIR/vmlinux" \
+            "$OUT_DIR/rootfs.ext4.zst" \
+            "$OUT_DIR/firecracker" \
+            "$OUT_DIR/kernel.config" \
+            "$OUT_DIR/checksums.txt" \
+            --target "$GITHUB_SHA" \
+            --title "$LATEST_ALIAS" \
+            --notes-file "$OUT_DIR/release-notes.md"

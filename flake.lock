@@ -1,0 +1,45 @@
+{
+  "nodes": {
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1780734595,
+        "narHash": "sha256-DmTfP92QFYRLOGXlMIE54MAgxSJjDWocl3gRNOu72Os=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "9b696460ac78b5ccfc17c854d8c976f20456e943",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-26.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "nixpkgs": "nixpkgs",
+        "yeet": "yeet"
+      }
+    },
+    "yeet": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1780863641,
+        "narHash": "sha256-OweLahKg0YZSVDpl74TFYzzyVbOk/PjNlu/b8dDG7qo=",
+        "owner": "yeetrun",
+        "repo": "yeet",
+        "rev": "fcf5c77d1e6b00ef05c4213e01d2783943dec7f1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "yeetrun",
+        "ref": "main",
+        "repo": "yeet",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
