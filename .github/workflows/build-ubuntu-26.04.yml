@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v12
+        default: ubuntu-26.04-amd64-v13
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -228,6 +228,11 @@ jobs:
             grep -q "^${config}=y$" "$OUT_DIR/kernel.config"
           done
           zstd -d -f --no-progress -o "$RUNNER_TEMP/rootfs.ext4" "$OUT_DIR/rootfs.ext4.zst"
+          rootfs_features="$(dumpe2fs -h "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F: '/Filesystem features/ { print $2; exit }')"
+          if printf '%s\n' "$rootfs_features" | grep -Eq '(^|[[:space:]])orphan_file($|[[:space:]])|(^|[[:space:]])FEATURE_'; then
+            echo "rootfs ext4 features are not compatible with common LTS host tooling: $rootfs_features" >&2
+            exit 1
+          fi
           debugfs -R 'stat /usr/local/lib/yeet-vm/yeet-init' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /usr/share/doc/yeet-vm-image/init.md' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/terminfo/x/xterm-ghostty' "$RUNNER_TEMP/rootfs.ext4" >/dev/null

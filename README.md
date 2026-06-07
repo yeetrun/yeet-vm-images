@@ -2,7 +2,7 @@
 
 The v0 VM payload is `vm://ubuntu/26.04`.
 
-The current fast bundle version is `ubuntu-26.04-amd64-v12`. It is built from
+The current fast bundle version is `ubuntu-26.04-amd64-v13`. It is built from
 the official Ubuntu 26.04 cloud image, boots a yeet-managed kernel under
 Firecracker direct kernel boot, uses `/usr/local/lib/yeet-vm/yeet-init` as the
 pre-systemd init shim, and omits `initrd.img`.
@@ -74,6 +74,8 @@ The fast profile customizes the Ubuntu rootfs before compression:
   keyboard setup, plymouth, module loading, and background maintenance timers;
 - preserves Ubuntu package-owned filesystem paths such as `/usr/sbin` so normal
   Ubuntu packages and alternatives keep working inside yeet VMs;
+- normalizes the root filesystem to a conservative ext4 feature set so common
+  LTS host tooling can check, resize, and mount VM disks during provisioning;
 - masks snapd units because the fast image intentionally does not support
   snaps.
 
@@ -91,7 +93,7 @@ the release assets.
 
 Inputs:
 
-- `version`: release and image version, for example `ubuntu-26.04-amd64-v12`
+- `version`: release and image version, for example `ubuntu-26.04-amd64-v13`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `ubuntu_cloud_base_url`: Ubuntu cloud image directory URL
 - `ubuntu_cloud_image`: Ubuntu cloud image tarball name
@@ -109,8 +111,8 @@ Inputs:
 The workflow validates `checksums.txt`, confirms the fast image has no
 `initrd.img`, checks the required kernel config values, verifies the embedded
 `yeet-init`, terminfo, router rootfs defaults, Ubuntu-compatible package paths,
-and guest init manifest metadata, prints the manifest, and publishes the
-release assets.
+host-compatible ext4 rootfs features, and guest init manifest metadata, prints
+the manifest, and publishes the release assets.
 
 ## Stock Profile
 
