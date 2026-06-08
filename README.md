@@ -37,10 +37,10 @@ The default Ubuntu build profile is `fast`. It requires a kernel that already
 has the Firecracker boot path built in. The kernel builder pins the
 Firecracker microVM config revision used by yeet's no-initrd direct-boot image
 and enables kernel IP autoconfiguration for the first VM interface. It also
-builds in TUN, IPv6, netfilter, conntrack, conntrack marks, nftables, nft
-NAT/masquerade, and the nft compatibility support needed by Ubuntu's
-`iptables-nft` userspace so guest-installed router software can run without
-loadable kernel modules:
+builds in TUN, IPv6, seccomp, netfilter, conntrack, conntrack marks, nftables,
+nft NAT/masquerade, and the nft compatibility support needed by Ubuntu's
+`iptables-nft` userspace so guest-installed router software and in-guest Nix
+builds can run without loadable kernel modules:
 
 ```bash
 scripts/build-linux-kernel.sh dist/kernel-linux-7.0
@@ -213,7 +213,7 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
-- `version`: release and image version, for example `nixos-26.05-amd64-v8`
+- `version`: release and image version, for example `nixos-26.05-amd64-v9`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `kernel_version`: Linux kernel version to build
 - `kernel_source_url`: Linux kernel source tarball URL

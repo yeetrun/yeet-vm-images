@@ -84,6 +84,8 @@ echo "Configuring yeet Firecracker kernel..."
 		--enable SERIAL_8250_CONSOLE \
 		--enable DEVTMPFS \
 		--enable DEVTMPFS_MOUNT \
+		--enable SECCOMP \
+		--enable SECCOMP_FILTER \
 		--enable CGROUPS \
 		--enable SECURITY_APPARMOR \
 		--enable SECURITY_APPARMOR_HASH \
@@ -153,6 +155,8 @@ require_config CONFIG_EXT4_FS y
 require_config CONFIG_SERIAL_8250_CONSOLE y
 require_config CONFIG_DEVTMPFS y
 require_config CONFIG_DEVTMPFS_MOUNT y
+require_config CONFIG_SECCOMP y
+require_config CONFIG_SECCOMP_FILTER y
 require_config CONFIG_TUN y
 require_config CONFIG_IPV6 y
 require_config CONFIG_IPV6_MULTIPLE_TABLES y

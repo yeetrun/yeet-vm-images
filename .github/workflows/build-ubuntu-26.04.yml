@@ -204,6 +204,8 @@ jobs:
           grep -q '^CONFIG_IP_PNP_DHCP=y$' "$OUT_DIR/kernel.config"
           for config in \
             CONFIG_TUN \
+            CONFIG_SECCOMP \
+            CONFIG_SECCOMP_FILTER \
             CONFIG_IPV6 \
             CONFIG_IPV6_MULTIPLE_TABLES \
             CONFIG_NETFILTER \
