@@ -48,6 +48,15 @@ on:
         required: true
         type: boolean
         default: false
+      publish_latest_alias:
+        description: Publish or refresh the catch-facing latest alias release.
+        required: true
+        type: boolean
+        default: true
+      latest_alias:
+        description: Release/tag name for the catch-facing latest alias.
+        required: true
+        default: ubuntu-26.04-amd64-latest
 
 permissions:
   contents: write
@@ -76,6 +85,7 @@ jobs:
       YEET_VM_IMAGE_WORK_DIR: ${{ github.workspace }}/.build-work
       YEET_VM_INIT_BINARY: ${{ github.workspace }}/yeet-src/guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init
       YEET_VM_GHOSTTY_TERMINFO: ${{ github.workspace }}/assets/xterm-ghostty.terminfo
+      LATEST_ALIAS: ${{ inputs.latest_alias }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -433,4 +443,24 @@ jobs:
             "$OUT_DIR/checksums.txt" \
             --target "$GITHUB_SHA" \
             --title "$VERSION" \
+            --notes-file "$OUT_DIR/release-notes.md"
+
+      - name: Publish latest alias
+        if: ${{ inputs.publish_latest_alias }}
+        run: |
+          set -euo pipefail
+          if gh release view "$LATEST_ALIAS" >/dev/null 2>&1; then
+            gh release delete "$LATEST_ALIAS" --cleanup-tag --yes
+          elif git ls-remote --exit-code --tags origin "refs/tags/$LATEST_ALIAS" >/dev/null 2>&1; then
+            git push origin ":refs/tags/$LATEST_ALIAS"
+          fi
+          gh release create "$LATEST_ALIAS" \
+            "$OUT_DIR/manifest.json" \
+            "$OUT_DIR/vmlinux" \
+            "$OUT_DIR/rootfs.ext4.zst" \
+            "$OUT_DIR/firecracker" \
+            "$OUT_DIR/kernel.config" \
+            "$OUT_DIR/checksums.txt" \
+            --target "$GITHUB_SHA" \
+            --title "$LATEST_ALIAS" \
             --notes-file "$OUT_DIR/release-notes.md"

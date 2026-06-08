@@ -16,9 +16,9 @@ Each bundle includes:
 - `kernel.config`
 - `checksums.txt`
 
-Ubuntu uses the latest GitHub release manifest:
+Ubuntu publishes both immutable version releases and a stable latest alias:
 
-`https://github.com/yeetrun/yeet-vm-images/releases/latest/download/manifest.json`
+`https://github.com/yeetrun/yeet-vm-images/releases/download/ubuntu-26.04-amd64-latest/manifest.json`
 
 NixOS publishes both immutable version releases and a stable latest alias:
 
@@ -177,6 +177,9 @@ Inputs:
 - `zstd_level`: compression level for `rootfs.ext4.zst`
 - `overwrite_release`: delete an existing release/tag with the same version
   before publishing
+- `publish_latest_alias`: update the stable Ubuntu latest alias after
+  publishing the immutable version release
+- `latest_alias`: release/tag name for the catch-facing latest alias
 
 The workflow validates `checksums.txt`, confirms the fast image has no
 `initrd.img`, checks the required kernel config values, verifies the embedded
