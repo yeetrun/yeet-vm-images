@@ -56,8 +56,7 @@ let
       "modprobe@fuse"
     ]
       (_: {
-        enable = false;
-        wantedBy = lib.mkForce [ ];
+        enable = lib.mkDefault false;
       });
 in
 {
@@ -65,13 +64,7 @@ in
   system.nixos.tags = [ "yeet-vm" ];
 
   boot = {
-    initrd = {
-      enable = false;
-      availableKernelModules = lib.mkForce [ ];
-      kernelModules = lib.mkForce [ ];
-    };
-    kernelModules = lib.mkForce [ ];
-    extraModulePackages = lib.mkForce [ ];
+    initrd.enable = false;
     loader.grub.enable = false;
     loader.systemd-boot.enable = false;
     tmp.cleanOnBoot = true;
@@ -183,8 +176,7 @@ in
 
     services = disabledModprobeServices // {
       systemd-modules-load = {
-        enable = false;
-        wantedBy = lib.mkForce [ ];
+        enable = lib.mkDefault false;
       };
 
       yeet-metadata-hostname = {
