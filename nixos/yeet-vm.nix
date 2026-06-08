@@ -47,13 +47,31 @@ let
     echo yeet-ready-timeout >/dev/ttyS0
     exit 1
   '';
+
+  disabledModprobeServices =
+    lib.genAttrs [
+      "modprobe@configfs"
+      "modprobe@drm"
+      "modprobe@efi_pstore"
+      "modprobe@fuse"
+    ]
+      (_: {
+        enable = false;
+        wantedBy = lib.mkForce [ ];
+      });
 in
 {
   system.stateVersion = "26.05";
   system.nixos.tags = [ "yeet-vm" ];
 
   boot = {
-    initrd.enable = false;
+    initrd = {
+      enable = false;
+      availableKernelModules = lib.mkForce [ ];
+      kernelModules = lib.mkForce [ ];
+    };
+    kernelModules = lib.mkForce [ ];
+    extraModulePackages = lib.mkForce [ ];
     loader.grub.enable = false;
     loader.systemd-boot.enable = false;
     tmp.cleanOnBoot = true;
@@ -163,7 +181,12 @@ in
       "c /dev/net/tun 0666 root root 10:200"
     ];
 
-    services = {
+    services = disabledModprobeServices // {
+      systemd-modules-load = {
+        enable = false;
+        wantedBy = lib.mkForce [ ];
+      };
+
       yeet-metadata-hostname = {
         description = "Apply yeet VM metadata hostname";
         wantedBy = [ "sysinit.target" ];
