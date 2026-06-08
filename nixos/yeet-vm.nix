@@ -65,6 +65,7 @@ in
 
   boot = {
     initrd.enable = false;
+    kernelModules = lib.mkForce [ ];
     loader.grub.enable = false;
     loader.systemd-boot.enable = false;
     tmp.cleanOnBoot = true;
