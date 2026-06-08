@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: nixos-26.05-amd64-v9
+        default: nixos-26.05-amd64-v10
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -190,7 +190,7 @@ jobs:
           printf '%s\n' "$grow_root_script" | grep -q 'resize2fs "$root_source"'
           grow_root_before="$(nix eval --extra-experimental-features "nix-command flakes" --json .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-grow-root.before)"
           printf '%s\n' "$grow_root_before" | jq -e 'index("yeet-guest-ready.service") != null'
-          grep -q '^# CONFIG_MODULES is not set$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_MODULES=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_BLK=y$' "$OUT_DIR/kernel.config"
@@ -299,6 +299,7 @@ jobs:
           - Kernel: \`$kernel_version\`
           - Nixpkgs: \`nixos-26.05\` (\`$nixpkgs_rev\`)
           - Metadata driver: \`nixos\`
+          - Nix: flakes and plain \`sudo nixos-rebuild switch\` are supported out of the box
           - Firecracker: \`$firecracker_version\`
 
           See \`manifest.json\` for full checksums and provenance.

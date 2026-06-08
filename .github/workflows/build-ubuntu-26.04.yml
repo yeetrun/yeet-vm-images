@@ -194,7 +194,7 @@ jobs:
             .rootfs == "rootfs.ext4.zst" and
             .provenance.kernel_source == "yeet-managed"
           ' "$OUT_DIR/manifest.json"
-          grep -q '^# CONFIG_MODULES is not set$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_MODULES=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_BLK=y$' "$OUT_DIR/kernel.config"

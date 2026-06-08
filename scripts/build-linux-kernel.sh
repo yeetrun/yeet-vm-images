@@ -69,7 +69,7 @@ echo "Configuring yeet Firecracker kernel..."
 (
 	cd "$src_dir"
 	scripts/config \
-		--disable MODULES \
+		--enable MODULES \
 		--enable VIRTIO \
 		--enable VIRTIO_MMIO \
 		--enable VIRTIO_MMIO_CMDLINE_DEVICES \
@@ -144,7 +144,7 @@ require_config() {
 	fi
 }
 
-require_config CONFIG_MODULES n
+require_config CONFIG_MODULES y
 require_config CONFIG_VIRTIO_MMIO y
 require_config CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES y
 require_config CONFIG_VIRTIO_BLK y

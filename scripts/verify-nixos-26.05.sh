@@ -45,6 +45,9 @@ assert_raw_equals() {
 
 assert_json "nix.settings.experimental-features" 'index("nix-command") != null and index("flakes") != null' "nix-command and flakes must be enabled by default"
 assert_json "nix.nixPath" 'index("nixpkgs=flake:nixpkgs") != null and index("nixos-config=/etc/nixos/configuration.nix") != null' "nixos-rebuild must find nixpkgs and /etc/nixos/configuration.nix by default"
+assert_json "environment.pathsToLink" 'index("/share/terminfo") != null' "terminfo must be linked into the system profile for Ghostty support"
+assert_json "environment.etc.terminfo.enable" '. == false' "/etc/terminfo must not be managed as a symlink because make-ext4-fs materializes it as a directory"
+assert_json "boot.modprobeConfig.enable" '. == true' "NixOS activation expects boot.modprobeConfig for /proc/sys/kernel/modprobe"
 
 for unit in \
 	'modprobe@configfs' \
@@ -52,7 +55,7 @@ for unit in \
 	'modprobe@efi_pstore' \
 	'modprobe@fuse'
 do
-	assert_json "systemd.services.\"${unit}\".enable" '. == false' "$unit must be disabled in the no-module microVM profile"
+	assert_json "systemd.services.\"${unit}\".enable" '. == false' "$unit must be disabled by default in the yeet microVM profile"
 done
 
 assert_raw_equals "services.openssh.authorizedKeysCommand" "none"

@@ -115,25 +115,28 @@ in
     };
   };
 
-  environment.systemPackages = with pkgs; [
-    bashInteractive
-    coreutils
-    curl
-    file
-    gitMinimal
-    htop
-    iproute2
-    iptables
-    jq
-    nftables
-    openssh
-    procps
-    sudo
-    vim
-    wget
-    ghosttyTerminfo
-  ];
-  environment.pathsToLink = [ "/share/terminfo" ];
+  environment = {
+    systemPackages = with pkgs; [
+      bashInteractive
+      coreutils
+      curl
+      file
+      gitMinimal
+      htop
+      iproute2
+      iptables
+      jq
+      nftables
+      openssh
+      procps
+      sudo
+      vim
+      wget
+      ghosttyTerminfo
+    ];
+    pathsToLink = [ "/share/terminfo" ];
+    etc.terminfo.enable = lib.mkForce false;
+  };
 
   programs.bash = {
     completion.enable = true;
