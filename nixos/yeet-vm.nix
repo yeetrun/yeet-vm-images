@@ -212,11 +212,55 @@ in
         wants = [ "systemd-networkd.service" ];
       };
 
+      yeet-grow-root = {
+        description = "yeet grow root filesystem";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "local-fs.target" ];
+        before = [ "yeet-guest-ready.service" ];
+        path = [
+          pkgs.e2fsprogs
+          pkgs.systemd
+          pkgs.util-linux
+        ];
+        script = ''
+          root_source="$(findmnt -n -o SOURCE / 2>/dev/null || true)"
+          root_fstype="$(findmnt -n -o FSTYPE / 2>/dev/null || true)"
+
+          case "$root_source" in
+            /dev/*) ;;
+            *) exit 0 ;;
+          esac
+
+          if [ "$root_fstype" != "ext4" ]; then
+            exit 0
+          fi
+
+          if resize2fs "$root_source"; then
+            logger "yeet-grow-root complete $root_source" || true
+            exit 0
+          fi
+
+          logger "yeet-grow-root failed $root_source" || true
+          exit 0
+        '';
+        serviceConfig = {
+          Type = "oneshot";
+          Nice = 10;
+          IOSchedulingClass = "idle";
+        };
+      };
+
       yeet-guest-ready = {
         description = "yeet-ready guest marker";
         wantedBy = [ "multi-user.target" ];
-        after = [ "sshd.service" ];
-        wants = [ "sshd.service" ];
+        after = [
+          "sshd.service"
+          "yeet-grow-root.service"
+        ];
+        wants = [
+          "sshd.service"
+          "yeet-grow-root.service"
+        ];
         path = [
           pkgs.gawk
           pkgs.gnugrep

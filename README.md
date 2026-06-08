@@ -132,6 +132,8 @@ The NixOS module:
 - reads the VM hostname from `/etc/yeet-vm/hostname`;
 - reads SSH authorized keys from `/etc/yeet-vm/authorized_keys.d/%u` through
   the NixOS OpenSSH `authorizedKeysFiles` option;
+- grows the ext4 root filesystem at boot before yeet reports guest readiness,
+  so ZFS-backed clones use the requested VM disk size;
 - installs practical base tools, nftables/iptables userspace, Ghostty terminfo,
   and Nix flakes support;
 - provides `/dev/net/tun` through tmpfiles for guest-managed tunnel software.
@@ -205,7 +207,7 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
-- `version`: release and image version, for example `nixos-26.05-amd64-v5`
+- `version`: release and image version, for example `nixos-26.05-amd64-v6`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `kernel_version`: Linux kernel version to build
 - `kernel_source_url`: Linux kernel source tarball URL
