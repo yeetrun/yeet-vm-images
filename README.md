@@ -134,9 +134,9 @@ The NixOS module:
   the NixOS OpenSSH `authorizedKeysFiles` option;
 - grows the ext4 root filesystem at boot before yeet reports guest readiness,
   so ZFS-backed clones use the requested VM disk size;
-- disables loadable-module startup work because the yeet Firecracker kernel is
-  built with the required VM, networking, nftables, TUN, and ext4 features
-  already enabled;
+- disables Firecracker-inapplicable static `modprobe@...` startup units while
+  leaving NixOS `systemd-modules-load` available for user-managed
+  `boot.kernelModules` settings;
 - installs practical base tools, nftables/iptables userspace, Ghostty terminfo,
   and Nix flakes support;
 - provides `/dev/net/tun` through tmpfiles for guest-managed tunnel software.
@@ -160,10 +160,12 @@ Local Nix checks:
 
 ```bash
 mise run lint
+scripts/verify-nixos-26.05.sh
 ```
 
-This runs `deadnix`, `nixpkgs-fmt --check`, and `statix check` against the
-flake and NixOS module.
+`mise run lint` runs `deadnix`, `nixpkgs-fmt --check`, and `statix check`
+against the flake and NixOS module. The verifier checks the yeet microVM
+profile, service wiring, metadata integration, and user overrideability.
 
 ## Publish a New Bundle
 
