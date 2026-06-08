@@ -240,7 +240,16 @@ jobs:
           assert_path_exists /nix/var/nix/profiles/system-1-link
           assert_symlink_target /nix/var/nix/profiles/system system-1-link
           assert_symlink_target /run/current-system /nix/var/nix/profiles/system
-          yeet_init_link="$(debugfs -R "stat /usr/local/lib/yeet-vm/yeet-init" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F': ' '/Fast link dest:/ { gsub(/^"|"$/, "", $2); print $2; exit }')"
+          yeet_vm_dump="$RUNNER_TEMP/yeet-vm-rdump"
+          rm -rf "$yeet_vm_dump"
+          mkdir -p "$yeet_vm_dump"
+          debugfs -R "rdump /usr/local/lib/yeet-vm $yeet_vm_dump" "$RUNNER_TEMP/rootfs.ext4" >/dev/null 2>&1
+          yeet_init_dump="$(find "$yeet_vm_dump" -name yeet-init -type l -print -quit)"
+          if [ -z "$yeet_init_dump" ]; then
+            echo "expected /usr/local/lib/yeet-vm/yeet-init to exist as a symlink" >&2
+            exit 1
+          fi
+          yeet_init_link="$(readlink "$yeet_init_dump")"
           case "$yeet_init_link" in
             /nix/store/*/bin/yeet-init)
               ;;
