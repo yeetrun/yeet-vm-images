@@ -7,9 +7,9 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 
-nix run nixpkgs#deadnix -- --fail .
-nix run nixpkgs#nixpkgs-fmt -- --check .
-nix run nixpkgs#statix -- check .
+nix --extra-experimental-features "nix-command flakes" run nixpkgs#deadnix -- --fail .
+nix --extra-experimental-features "nix-command flakes" run nixpkgs#nixpkgs-fmt -- --check .
+nix --extra-experimental-features "nix-command flakes" run nixpkgs#statix -- check .
 '''
 
 [tasks."lint:fix"]
@@ -18,7 +18,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 
-nix run nixpkgs#deadnix -- --edit .
-nix run nixpkgs#nixpkgs-fmt -- .
-nix run nixpkgs#statix -- fix .
+nix --extra-experimental-features "nix-command flakes" run nixpkgs#deadnix -- --edit .
+nix --extra-experimental-features "nix-command flakes" run nixpkgs#nixpkgs-fmt -- .
+nix --extra-experimental-features "nix-command flakes" run nixpkgs#statix -- fix .
 '''
