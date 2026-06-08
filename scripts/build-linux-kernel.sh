@@ -80,6 +80,7 @@ echo "Configuring yeet Firecracker kernel..."
 		--enable EXT4_FS \
 		--enable EXT4_FS_POSIX_ACL \
 		--enable EXT4_FS_SECURITY \
+		--enable AUTOFS_FS \
 		--enable SERIAL_8250 \
 		--enable SERIAL_8250_CONSOLE \
 		--enable DEVTMPFS \
@@ -152,6 +153,7 @@ require_config CONFIG_VIRTIO_NET y
 require_config CONFIG_IP_PNP y
 require_config CONFIG_IP_PNP_DHCP y
 require_config CONFIG_EXT4_FS y
+require_config CONFIG_AUTOFS_FS y
 require_config CONFIG_SERIAL_8250_CONSOLE y
 require_config CONFIG_DEVTMPFS y
 require_config CONFIG_DEVTMPFS_MOUNT y
