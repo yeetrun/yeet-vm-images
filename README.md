@@ -134,6 +134,9 @@ The NixOS module:
   the NixOS OpenSSH `authorizedKeysFiles` option;
 - grows the ext4 root filesystem at boot before yeet reports guest readiness,
   so ZFS-backed clones use the requested VM disk size;
+- disables loadable-module startup work because the yeet Firecracker kernel is
+  built with the required VM, networking, nftables, TUN, and ext4 features
+  already enabled;
 - installs practical base tools, nftables/iptables userspace, Ghostty terminfo,
   and Nix flakes support;
 - provides `/dev/net/tun` through tmpfiles for guest-managed tunnel software.
@@ -207,7 +210,7 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
-- `version`: release and image version, for example `nixos-26.05-amd64-v6`
+- `version`: release and image version, for example `nixos-26.05-amd64-v7`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `kernel_version`: Linux kernel version to build
 - `kernel_source_url`: Linux kernel source tarball URL
