@@ -44,6 +44,7 @@ assert_raw_equals() {
 }
 
 assert_json "nix.settings.experimental-features" 'index("nix-command") != null and index("flakes") != null' "nix-command and flakes must be enabled by default"
+assert_json "nix.nixPath" 'index("nixpkgs=flake:nixpkgs") != null and index("nixos-config=/etc/nixos/configuration.nix") != null' "nixos-rebuild must find nixpkgs and /etc/nixos/configuration.nix by default"
 
 for unit in \
 	'modprobe@configfs' \

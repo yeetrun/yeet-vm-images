@@ -4,5 +4,5 @@
   # This file is intentionally small so users can add normal NixOS
   # configuration here and rebuild with:
   #
-  #   sudo nixos-rebuild switch -I nixos-config=/etc/nixos/configuration.nix
+  #   sudo nixos-rebuild switch
 }

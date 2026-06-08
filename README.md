@@ -126,7 +126,8 @@ NixOS image metadata:
 The NixOS module:
 
 - keeps `/etc/nixos/configuration.nix` and `/etc/nixos/yeet-vm.nix` in the
-  guest so users can inspect and rebuild the system normally;
+  guest and wires `nixos-config` into `NIX_PATH` so users can inspect and
+  rebuild the system normally with `sudo nixos-rebuild switch`;
 - uses systemd-networkd and copies yeet-provided network snippets from
   `/etc/yeet-vm/systemd-network` into `/run/systemd/network` at boot;
 - reads the VM hostname from `/etc/yeet-vm/hostname`;
@@ -212,7 +213,7 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
-- `version`: release and image version, for example `nixos-26.05-amd64-v7`
+- `version`: release and image version, for example `nixos-26.05-amd64-v8`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `kernel_version`: Linux kernel version to build
 - `kernel_source_url`: Linux kernel source tarball URL

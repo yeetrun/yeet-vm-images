@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-version="${YEET_VM_IMAGE_VERSION:-nixos-26.05-amd64-v7}"
+version="${YEET_VM_IMAGE_VERSION:-nixos-26.05-amd64-v8}"
 out_dir="${1:-dist/$version}"
 work_dir="${YEET_VM_IMAGE_WORK_DIR:-}"
 kernel_path="${YEET_VM_KERNEL_PATH:-}"

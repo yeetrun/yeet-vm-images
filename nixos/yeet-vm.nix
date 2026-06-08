@@ -151,6 +151,10 @@ in
 
   nix = {
     package = pkgs.nixVersions.latest;
+    nixPath = [
+      "nixpkgs=flake:nixpkgs"
+      "nixos-config=/etc/nixos/configuration.nix"
+    ];
     settings.experimental-features = [
       "nix-command"
       "flakes"
