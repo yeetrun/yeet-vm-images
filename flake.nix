@@ -10,15 +10,14 @@
   };
 
   outputs =
-    {
-      self,
-      nixpkgs,
-      yeet,
+    { nixpkgs
+    , yeet
+    , ...
     }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
-      lib = pkgs.lib;
+      inherit (pkgs) lib;
 
       yeetInit = pkgs.rustPlatform.buildRustPackage {
         pname = "yeet-init";

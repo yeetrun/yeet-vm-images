@@ -130,9 +130,8 @@ The NixOS module:
 - uses systemd-networkd and copies yeet-provided network snippets from
   `/etc/yeet-vm/systemd-network` into `/run/systemd/network` at boot;
 - reads the VM hostname from `/etc/yeet-vm/hostname`;
-- reads SSH authorized keys from `/etc/yeet-vm/authorized_keys` for the
-  `nixos` user through an OpenSSH `AuthorizedKeysCommand` installed with
-  NixOS `security.wrappers`;
+- reads SSH authorized keys from `/etc/yeet-vm/authorized_keys.d/%u` through
+  the NixOS OpenSSH `authorizedKeysFiles` option;
 - installs practical base tools, nftables/iptables userspace, Ghostty terminfo,
   and Nix flakes support;
 - provides `/dev/net/tun` through tmpfiles for guest-managed tunnel software.
@@ -151,6 +150,15 @@ YEET_VM_KERNEL_PATH="$PWD/dist/kernel-linux-7.0/vmlinux" \
   YEET_SOURCE_PATH="$PWD/../yeet" \
   scripts/build-nixos-26.05.sh
 ```
+
+Local Nix checks:
+
+```bash
+mise run lint
+```
+
+This runs `deadnix`, `nixpkgs-fmt --check`, and `statix check` against the
+flake and NixOS module.
 
 ## Publish a New Bundle
 
@@ -197,7 +205,7 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
-- `version`: release and image version, for example `nixos-26.05-amd64-v3`
+- `version`: release and image version, for example `nixos-26.05-amd64-v4`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `kernel_version`: Linux kernel version to build
 - `kernel_source_url`: Linux kernel source tarball URL

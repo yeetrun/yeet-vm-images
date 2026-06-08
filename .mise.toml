@@ -1,0 +1,24 @@
+[tools]
+pre-commit = "latest"
+
+[tasks.lint]
+description = "Check Nix files with deadnix, nixpkgs-fmt, and statix"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+nix run nixpkgs#deadnix -- --fail .
+nix run nixpkgs#nixpkgs-fmt -- --check .
+nix run nixpkgs#statix -- check .
+'''
+
+[tasks."lint:fix"]
+description = "Auto-fix Nix files with deadnix, nixpkgs-fmt, and statix"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+nix run nixpkgs#deadnix -- --edit .
+nix run nixpkgs#nixpkgs-fmt -- .
+nix run nixpkgs#statix -- fix .
+'''

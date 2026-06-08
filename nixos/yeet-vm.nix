@@ -1,8 +1,6 @@
-{
-  config,
-  lib,
-  pkgs,
-  ...
+{ lib
+, pkgs
+, ...
 }:
 
 let
@@ -13,14 +11,6 @@ let
         tic -x -o "$out/share/terminfo" ${./assets/xterm-ghostty.terminfo}
         test -e "$out/share/terminfo/x/xterm-ghostty"
       '';
-
-  authorizedKeysCommand = pkgs.writeShellScript "yeet-vm-authorized-keys" ''
-    set -eu
-    user="''${1:-}"
-    if [ "$user" = "nixos" ] && [ -r /etc/yeet-vm/authorized_keys ]; then
-      cat /etc/yeet-vm/authorized_keys
-    fi
-  '';
 
   guestReady = pkgs.writeShellScript "yeet-guest-ready" ''
     set -eu
@@ -62,10 +52,12 @@ in
   system.stateVersion = "26.05";
   system.nixos.tags = [ "yeet-vm" ];
 
-  boot.initrd.enable = false;
-  boot.loader.grub.enable = false;
-  boot.loader.systemd-boot.enable = false;
-  boot.tmp.cleanOnBoot = true;
+  boot = {
+    initrd.enable = false;
+    loader.grub.enable = false;
+    loader.systemd-boot.enable = false;
+    tmp.cleanOnBoot = true;
+  };
 
   fileSystems."/" = {
     device = "/dev/vda";
@@ -80,7 +72,6 @@ in
     useNetworkd = true;
   };
 
-  systemd.network.enable = true;
   services.resolved.enable = true;
 
   users.mutableUsers = true;
@@ -98,8 +89,11 @@ in
 
   services.openssh = {
     enable = true;
-    authorizedKeysCommand = "${config.security.wrapperDir}/yeet-vm-authorized-keys %u";
-    authorizedKeysCommandUser = "nobody";
+    authorizedKeysFiles = [
+      "%h/.ssh/authorized_keys"
+      "/etc/ssh/authorized_keys.d/%u"
+      "/etc/yeet-vm/authorized_keys.d/%u"
+    ];
     openFirewall = false;
     settings = {
       KbdInteractiveAuthentication = false;
@@ -108,12 +102,6 @@ in
       UseDns = false;
       X11Forwarding = false;
     };
-  };
-
-  security.wrappers.yeet-vm-authorized-keys = {
-    owner = "root";
-    group = "root";
-    source = authorizedKeysCommand;
   };
 
   environment.systemPackages = with pkgs; [
@@ -165,73 +153,79 @@ in
     nixos.enable = false;
   };
 
-  systemd.tmpfiles.rules = [
-    "d /etc/yeet-vm 0755 root root -"
-    "d /etc/yeet-vm/systemd-network 0755 root root -"
-    "d /dev/net 0755 root root -"
-    "c /dev/net/tun 0666 root root 10:200"
-  ];
-
-  systemd.services.yeet-metadata-hostname = {
-    description = "Apply yeet VM metadata hostname";
-    wantedBy = [ "sysinit.target" ];
-    before = [
-      "network-pre.target"
-      "systemd-networkd.service"
+  systemd = {
+    network.enable = true;
+    tmpfiles.rules = [
+      "d /etc/yeet-vm 0755 root root -"
+      "d /etc/yeet-vm/authorized_keys.d 0755 root root -"
+      "d /etc/yeet-vm/systemd-network 0755 root root -"
+      "d /dev/net 0755 root root -"
+      "c /dev/net/tun 0666 root root 10:200"
     ];
-    unitConfig.DefaultDependencies = false;
-    path = [ pkgs.nettools ];
-    script = ''
-      if [ -r /etc/yeet-vm/hostname ]; then
-        name="$(head -n1 /etc/yeet-vm/hostname | tr -d '[:space:]')"
-        if [ -n "$name" ]; then
-          hostname "$name"
-        fi
-      fi
-    '';
-    serviceConfig.Type = "oneshot";
-  };
 
-  systemd.services.yeet-networkd-metadata = {
-    description = "Install yeet VM networkd metadata";
-    wantedBy = [ "sysinit.target" ];
-    before = [
-      "network-pre.target"
-      "systemd-networkd.service"
-    ];
-    unitConfig.DefaultDependencies = false;
-    script = ''
-      mkdir -p /run/systemd/network
-      if compgen -G "/etc/yeet-vm/systemd-network/*.network" >/dev/null; then
-        cp /etc/yeet-vm/systemd-network/*.network /run/systemd/network/
-      fi
-    '';
-    serviceConfig.Type = "oneshot";
-  };
+    services = {
+      yeet-metadata-hostname = {
+        description = "Apply yeet VM metadata hostname";
+        wantedBy = [ "sysinit.target" ];
+        before = [
+          "network-pre.target"
+          "systemd-networkd.service"
+        ];
+        unitConfig.DefaultDependencies = false;
+        path = [ pkgs.nettools ];
+        script = ''
+          if [ -r /etc/yeet-vm/hostname ]; then
+            name="$(head -n1 /etc/yeet-vm/hostname | tr -d '[:space:]')"
+            if [ -n "$name" ]; then
+              hostname "$name"
+            fi
+          fi
+        '';
+        serviceConfig.Type = "oneshot";
+      };
 
-  systemd.services.sshd = {
-    after = [
-      "yeet-metadata-hostname.service"
-      "yeet-networkd-metadata.service"
-      "systemd-networkd.service"
-    ];
-    wants = [ "systemd-networkd.service" ];
-  };
+      yeet-networkd-metadata = {
+        description = "Install yeet VM networkd metadata";
+        wantedBy = [ "sysinit.target" ];
+        before = [
+          "network-pre.target"
+          "systemd-networkd.service"
+        ];
+        unitConfig.DefaultDependencies = false;
+        script = ''
+          mkdir -p /run/systemd/network
+          if compgen -G "/etc/yeet-vm/systemd-network/*.network" >/dev/null; then
+            cp /etc/yeet-vm/systemd-network/*.network /run/systemd/network/
+          fi
+        '';
+        serviceConfig.Type = "oneshot";
+      };
 
-  systemd.services.yeet-guest-ready = {
-    description = "yeet-ready guest marker";
-    wantedBy = [ "multi-user.target" ];
-    after = [ "sshd.service" ];
-    wants = [ "sshd.service" ];
-    path = [
-      pkgs.gawk
-      pkgs.gnugrep
-      pkgs.iproute2
-      pkgs.systemd
-    ];
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = guestReady;
+      sshd = {
+        after = [
+          "yeet-metadata-hostname.service"
+          "yeet-networkd-metadata.service"
+          "systemd-networkd.service"
+        ];
+        wants = [ "systemd-networkd.service" ];
+      };
+
+      yeet-guest-ready = {
+        description = "yeet-ready guest marker";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "sshd.service" ];
+        wants = [ "sshd.service" ];
+        path = [
+          pkgs.gawk
+          pkgs.gnugrep
+          pkgs.iproute2
+          pkgs.systemd
+        ];
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = guestReady;
+        };
+      };
     };
   };
 }
