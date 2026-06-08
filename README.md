@@ -196,7 +196,7 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
-- `version`: release and image version, for example `nixos-26.05-amd64-v1`
+- `version`: release and image version, for example `nixos-26.05-amd64-v2`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `kernel_version`: Linux kernel version to build
 - `kernel_source_url`: Linux kernel source tarball URL
