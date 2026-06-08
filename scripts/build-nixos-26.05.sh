@@ -64,6 +64,10 @@ if [ -n "$yeet_source_path" ]; then
 	nix_common_args+=(--override-input yeet "path:$yeet_source_path")
 fi
 
+nix_flake_metadata_json() {
+	nix flake metadata "${nix_common_args[@]}" --json .
+}
+
 echo "Building NixOS 26.05 rootfs..."
 nix build "${nix_common_args[@]}" --out-link "$work_dir/rootfs-result" .#nixos-26_05-rootfs
 rootfs_result="$(readlink -f "$work_dir/rootfs-result")"
@@ -138,11 +142,12 @@ kernel_sha="$(sha256sum "$out_dir/vmlinux" | awk '{ print $1 }')"
 firecracker_sha="$(sha256sum "$out_dir/firecracker" | awk '{ print $1 }')"
 source_image_sha="$(sha256sum "$out_dir/rootfs.ext4" | awk '{ print $1 }')"
 build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-nixpkgs_rev="$(nix flake metadata --json . | jq -r '.locks.nodes.nixpkgs.locked.rev // empty')"
+flake_metadata="$(nix_flake_metadata_json)"
+nixpkgs_rev="$(printf '%s' "$flake_metadata" | jq -r '.locks.nodes.nixpkgs.locked.rev // empty')"
 if [ -n "$yeet_source_path" ] && git -C "$yeet_source_path" rev-parse HEAD >/dev/null 2>&1; then
 	yeet_rev="$(git -C "$yeet_source_path" rev-parse HEAD)"
 else
-	yeet_rev="$(nix flake metadata --json . | jq -r '.locks.nodes.yeet.locked.rev // empty')"
+	yeet_rev="$(printf '%s' "$flake_metadata" | jq -r '.locks.nodes.yeet.locked.rev // empty')"
 fi
 guest_init_sha="$(sha256sum "$yeet_init_result/bin/yeet-init" | awk '{ print $1 }')"
 
