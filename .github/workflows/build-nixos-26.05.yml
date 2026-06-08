@@ -117,7 +117,9 @@ jobs:
 
       - name: Build image bundle
         run: |
-          scripts/build-nixos-26.05.sh "$OUT_DIR"
+          YEET_VM_KERNEL_PATH="$GITHUB_WORKSPACE/$KERNEL_OUT_DIR/vmlinux" \
+            YEET_VM_KERNEL_VERSION="linux-${YEET_KERNEL_VERSION}-yeet" \
+            scripts/build-nixos-26.05.sh "$OUT_DIR"
 
       - name: Verify bundle
         run: |
