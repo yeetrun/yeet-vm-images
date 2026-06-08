@@ -98,7 +98,7 @@ in
 
   services.openssh = {
     enable = true;
-    authorizedKeysCommand = "${authorizedKeysCommand} %u";
+    authorizedKeysCommand = "${config.security.wrapperDir}/yeet-vm-authorized-keys %u";
     authorizedKeysCommandUser = "nobody";
     openFirewall = false;
     settings = {
@@ -108,6 +108,12 @@ in
       UseDns = false;
       X11Forwarding = false;
     };
+  };
+
+  security.wrappers.yeet-vm-authorized-keys = {
+    owner = "root";
+    group = "root";
+    source = authorizedKeysCommand;
   };
 
   environment.systemPackages = with pkgs; [

@@ -131,7 +131,8 @@ The NixOS module:
   `/etc/yeet-vm/systemd-network` into `/run/systemd/network` at boot;
 - reads the VM hostname from `/etc/yeet-vm/hostname`;
 - reads SSH authorized keys from `/etc/yeet-vm/authorized_keys` for the
-  `nixos` user through OpenSSH's `AuthorizedKeysCommand`;
+  `nixos` user through an OpenSSH `AuthorizedKeysCommand` installed with
+  NixOS `security.wrappers`;
 - installs practical base tools, nftables/iptables userspace, Ghostty terminfo,
   and Nix flakes support;
 - provides `/dev/net/tun` through tmpfiles for guest-managed tunnel software.
@@ -196,7 +197,7 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
-- `version`: release and image version, for example `nixos-26.05-amd64-v2`
+- `version`: release and image version, for example `nixos-26.05-amd64-v3`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `kernel_version`: Linux kernel version to build
 - `kernel_source_url`: Linux kernel source tarball URL

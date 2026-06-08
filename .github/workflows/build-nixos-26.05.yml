@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: nixos-26.05-amd64-v2
+        default: nixos-26.05-amd64-v3
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -167,6 +167,25 @@ jobs:
             .rootfs == "rootfs.ext4.zst" and
             .kernel_policy == "yeet-managed"
           ' "$OUT_DIR/manifest.json"
+          ssh_keys_command="$(nix eval --extra-experimental-features "nix-command flakes" --raw .#nixosConfigurations.yeet-nixos-26_05.config.services.openssh.authorizedKeysCommand)"
+          if [ "$ssh_keys_command" != "/run/wrappers/bin/yeet-vm-authorized-keys %u" ]; then
+            echo "unexpected NixOS AuthorizedKeysCommand: $ssh_keys_command" >&2
+            exit 1
+          fi
+          ssh_keys_command_user="$(nix eval --extra-experimental-features "nix-command flakes" --raw .#nixosConfigurations.yeet-nixos-26_05.config.services.openssh.authorizedKeysCommandUser)"
+          if [ "$ssh_keys_command_user" != "nobody" ]; then
+            echo "unexpected NixOS AuthorizedKeysCommandUser: $ssh_keys_command_user" >&2
+            exit 1
+          fi
+          ssh_keys_wrapper_source="$(nix eval --extra-experimental-features "nix-command flakes" --raw .#nixosConfigurations.yeet-nixos-26_05.config.security.wrappers.yeet-vm-authorized-keys.source)"
+          case "$ssh_keys_wrapper_source" in
+            /nix/store/*-yeet-vm-authorized-keys)
+              ;;
+            *)
+              echo "unexpected yeet-vm-authorized-keys wrapper source: $ssh_keys_wrapper_source" >&2
+              exit 1
+              ;;
+          esac
           grep -q '^# CONFIG_MODULES is not set$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y$' "$OUT_DIR/kernel.config"
