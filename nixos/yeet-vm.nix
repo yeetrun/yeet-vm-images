@@ -194,9 +194,11 @@ in
         unitConfig.DefaultDependencies = false;
         script = ''
           mkdir -p /run/systemd/network
-          if compgen -G "/etc/yeet-vm/systemd-network/*.network" >/dev/null; then
-            cp /etc/yeet-vm/systemd-network/*.network /run/systemd/network/
-          fi
+          for network in /etc/yeet-vm/systemd-network/*.network; do
+            if [ -e "$network" ]; then
+              cp "$network" /run/systemd/network/
+            fi
+          done
         '';
         serviceConfig.Type = "oneshot";
       };

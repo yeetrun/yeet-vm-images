@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: nixos-26.05-amd64-v4
+        default: nixos-26.05-amd64-v5
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true
@@ -180,6 +180,11 @@ jobs:
           fi
           nix eval --extra-experimental-features "nix-command flakes" --json .#nixosConfigurations.yeet-nixos-26_05.config.services.openssh.authorizedKeysFiles \
             | jq -e 'index("/etc/yeet-vm/authorized_keys.d/%u") != null'
+          networkd_metadata_script="$(nix eval --extra-experimental-features "nix-command flakes" --raw .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-networkd-metadata.script)"
+          if printf '%s\n' "$networkd_metadata_script" | grep -q 'compgen'; then
+            echo "yeet-networkd-metadata must not depend on Bash-only compgen" >&2
+            exit 1
+          fi
           grep -q '^# CONFIG_MODULES is not set$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y$' "$OUT_DIR/kernel.config"
