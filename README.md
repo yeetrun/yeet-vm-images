@@ -226,7 +226,7 @@ Inputs:
 - `publish_latest_alias`: update the stable NixOS latest alias after publishing
   the immutable version release
 
-The workflow validates `checksums.txt`, checks the required kernel config
-values, verifies NixOS system links, confirms the embedded `yeet-init`, checks
-the Ghostty terminfo source, verifies NixOS manifest metadata, prints the
-manifest, and publishes the release assets.
+The workflow validates the NixOS microVM profile, checks `checksums.txt`,
+checks the required kernel config values, verifies NixOS system links, confirms
+the embedded `yeet-init`, checks the Ghostty terminfo source, verifies NixOS
+manifest metadata, prints the manifest, and publishes the release assets.
