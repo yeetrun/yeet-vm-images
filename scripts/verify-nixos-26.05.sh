@@ -43,7 +43,6 @@ assert_raw_equals() {
 	fi
 }
 
-assert_json "systemd.services.systemd-modules-load.enable" '. == false' "systemd-modules-load must be disabled"
 assert_json "nix.settings.experimental-features" 'index("nix-command") != null and index("flakes") != null' "nix-command and flakes must be enabled by default"
 
 for unit in \
@@ -92,10 +91,7 @@ let
   cfg = (flake.nixosConfigurations.yeet-nixos-26_05.extendModules {
     modules = [
       ({ ... }: {
-        systemd.services.systemd-modules-load = {
-          enable = true;
-          wantedBy = [ "multi-user.target" ];
-        };
+        boot.kernelModules = [ "dummy" ];
         systemd.services."modprobe@fuse" = {
           enable = true;
           wantedBy = [ "sysinit.target" ];
@@ -104,6 +100,7 @@ let
     ];
   }).config;
 in {
+  bootKernelModules = cfg.boot.kernelModules;
   systemdModulesLoadEnable = cfg.systemd.services.systemd-modules-load.enable;
   systemdModulesLoadWantedBy = cfg.systemd.services.systemd-modules-load.wantedBy;
   modprobeFuseEnable = cfg.systemd.services."modprobe@fuse".enable;
@@ -112,6 +109,7 @@ in {
 '
 )"
 printf '%s\n' "$override_probe" | jq -e '
+  (.bootKernelModules | index("dummy") != null) and
   .systemdModulesLoadEnable == true and
   (.systemdModulesLoadWantedBy | index("multi-user.target") != null) and
   .modprobeFuseEnable == true and

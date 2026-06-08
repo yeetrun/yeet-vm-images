@@ -175,10 +175,6 @@ in
     ];
 
     services = disabledModprobeServices // {
-      systemd-modules-load = {
-        enable = lib.mkDefault false;
-      };
-
       yeet-metadata-hostname = {
         description = "Apply yeet VM metadata hostname";
         wantedBy = [ "sysinit.target" ];
