@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: nixos-26.05-amd64-v12
+        default: nixos-26.05-amd64-v13
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true

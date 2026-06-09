@@ -26,7 +26,7 @@ NixOS publishes both immutable version releases and a stable latest alias:
 
 ## Ubuntu 26.04
 
-The current Ubuntu bundle version is `ubuntu-26.04-amd64-v13`. It is built from
+The current Ubuntu bundle version is `ubuntu-26.04-amd64-v14`. It is built from
 the official Ubuntu 26.04 cloud image, boots a yeet-managed kernel under
 Firecracker direct kernel boot, uses `/usr/local/lib/yeet-vm/yeet-init` as the
 pre-systemd init shim, and omits `initrd.img`.
@@ -70,9 +70,9 @@ The fast profile customizes the Ubuntu rootfs before compression:
 - installs the Rust `yeet-init` binary into `/usr/local/lib/yeet-vm/yeet-init`;
 - compiles Ghostty's `xterm-ghostty` terminfo into `/etc/terminfo` so terminal
   applications recognize that TERM value out of the box;
-- keeps `iptables` and `nftables` userspace tools installed for guest-managed
-  firewalls and routers. On Ubuntu, the default `iptables` command uses the
-  nftables backend;
+- keeps `iptables`, `nftables`, and `rsync` userspace tools installed for
+  guest-managed firewalls, routers, and `yeet copy` guest file sync. On Ubuntu,
+  the default `iptables` command uses the nftables backend;
 - writes `/etc/sysctl.d/99-yeet-vm-router.conf` with IPv4 and IPv6 forwarding
   enabled;
 - writes `/etc/tmpfiles.d/yeet-vm-tun.conf` so `/dev/net/tun` is present for
@@ -140,8 +140,9 @@ The NixOS module:
 - disables Firecracker-inapplicable static `modprobe@...` startup units and
   clears upstream generic hardware module requests because yeet kernels build
   the microVM drivers in and the image does not ship a module tree;
-- installs practical base tools, nftables/iptables userspace, Ghostty terminfo,
-  and Nix flakes support through the normal system profile;
+- installs practical base tools, nftables/iptables userspace, rsync for
+  `yeet copy` guest file sync, Ghostty terminfo, and Nix flakes support through
+  the normal system profile;
 - provides `/dev/net/tun` through tmpfiles for guest-managed tunnel software.
 
 The NixOS image does not preinstall Tailscale or other application services.
@@ -183,7 +184,7 @@ the bundle, and publishes the release assets.
 
 Inputs:
 
-- `version`: release and image version, for example `ubuntu-26.04-amd64-v13`
+- `version`: release and image version, for example `ubuntu-26.04-amd64-v14`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `ubuntu_cloud_base_url`: Ubuntu cloud image directory URL
 - `ubuntu_cloud_image`: Ubuntu cloud image tarball name
@@ -216,7 +217,7 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
-- `version`: release and image version, for example `nixos-26.05-amd64-v12`
+- `version`: release and image version, for example `nixos-26.05-amd64-v13`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
 - `kernel_version`: Linux kernel version to build
 - `kernel_source_url`: Linux kernel source tarball URL

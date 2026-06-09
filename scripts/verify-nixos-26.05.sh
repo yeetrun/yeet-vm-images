@@ -47,6 +47,7 @@ assert_json "nix.settings.experimental-features" 'index("nix-command") != null a
 assert_json "nix.nixPath" 'index("nixpkgs=flake:nixpkgs") != null and index("nixos-config=/etc/nixos/configuration.nix") != null' "nixos-rebuild must find nixpkgs and /etc/nixos/configuration.nix by default"
 assert_json "environment.pathsToLink" 'index("/share/terminfo") != null' "terminfo must be linked into the system profile for Ghostty support"
 assert_json "environment.etc.terminfo.enable" '. == false' "/etc/terminfo must not be managed as a symlink because make-ext4-fs materializes it as a directory"
+assert_json "environment.systemPackages" 'map(tostring) | any(contains("rsync"))' "rsync must be installed for yeet VM copy"
 assert_json "boot.modprobeConfig.enable" '. == true' "NixOS activation expects boot.modprobeConfig for /proc/sys/kernel/modprobe"
 assert_json "boot.kernelModules" '. == []' "default NixOS hardware module requests must be cleared for the yeet microVM kernel"
 

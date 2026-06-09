@@ -6,7 +6,7 @@ on:
       version:
         description: Release/image version to publish.
         required: true
-        default: ubuntu-26.04-amd64-v13
+        default: ubuntu-26.04-amd64-v14
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init.
         required: true

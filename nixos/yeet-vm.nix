@@ -130,6 +130,7 @@ in
       nftables
       openssh
       procps
+      rsync
       sudo
       vim
       wget
