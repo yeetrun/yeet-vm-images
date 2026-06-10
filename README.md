@@ -52,9 +52,11 @@ cd ../yeet-vm-images
 sudo YEET_VM_KERNEL_PATH="$PWD/dist/kernel-linux-7.0/vmlinux" \
   YEET_VM_KERNEL_VERSION=linux-7.0-yeet \
   YEET_VM_INIT_PATH="$PWD/../yeet/guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init" \
-  YEET_VM_GHOSTTY_TERMINFO="$PWD/../yeet/pkg/catch/xterm-ghostty.terminfo" \
   scripts/build-ubuntu-26.04.sh
 ```
+
+The Ubuntu builder uses `assets/xterm-ghostty.terminfo` by default. Set
+`YEET_VM_GHOSTTY_TERMINFO` only when testing a different terminfo source.
 
 The fast profile customizes the Ubuntu rootfs before compression:
 
