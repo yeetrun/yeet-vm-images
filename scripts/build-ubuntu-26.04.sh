@@ -12,7 +12,12 @@ work_dir="${YEET_VM_IMAGE_WORK_DIR:-}"
 kernel_path="${YEET_VM_KERNEL_PATH:-}"
 kernel_version_override="${YEET_VM_KERNEL_VERSION:-}"
 guest_init_path="${YEET_VM_INIT_PATH:-}"
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+script_source="${BASH_SOURCE[0]}"
+script_dir="${script_source%/*}"
+if [ "$script_dir" = "$script_source" ]; then
+	script_dir="."
+fi
+script_dir="$(cd "$script_dir" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 ghostty_terminfo_source="${YEET_VM_GHOSTTY_TERMINFO:-$repo_root/assets/xterm-ghostty.terminfo}"
 
@@ -32,7 +37,7 @@ require() {
 	fi
 }
 
-for cmd in awk chmod cmp cp curl date debugfs file find grep install mkdir mktemp sha256sum stat tar zstd; do
+for cmd in awk basename cat chmod cmp cp curl date debugfs dirname file find grep install mkdir mktemp rm sha256sum stat tar zstd; do
 	require "$cmd"
 done
 

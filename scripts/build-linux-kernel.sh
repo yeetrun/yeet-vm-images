@@ -22,7 +22,7 @@ require() {
 	fi
 }
 
-for cmd in awk curl file grep install make mkdir mktemp nproc sha256sum tar xz; do
+for cmd in awk curl file find grep install make mkdir mktemp nproc rm sha256sum tail tar xz; do
 	require "$cmd"
 done
 

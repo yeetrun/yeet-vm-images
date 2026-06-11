@@ -24,7 +24,7 @@ require() {
 	fi
 }
 
-for cmd in awk chmod cp curl date dumpe2fs e2fsck file find grep install jq mkdir mktemp nix readlink resize2fs sha256sum stat tar tune2fs zstd; do
+for cmd in awk basename cat chmod cp curl date dirname dumpe2fs e2fsck file find grep install jq mkdir mktemp nix readlink resize2fs rm sha256sum stat tar tune2fs zstd; do
 	require "$cmd"
 done
 
@@ -38,6 +38,9 @@ if [ ! -r "$kernel_path" ]; then
 fi
 if [ -z "$kernel_version" ]; then
 	kernel_version="$(basename "$kernel_path")"
+fi
+if [ -n "$yeet_source_path" ]; then
+	require git
 fi
 
 if [ -z "$work_dir" ]; then
@@ -144,8 +147,11 @@ source_image_sha="$(sha256sum "$out_dir/rootfs.ext4" | awk '{ print $1 }')"
 build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 flake_metadata="$(nix_flake_metadata_json)"
 nixpkgs_rev="$(printf '%s' "$flake_metadata" | jq -r '.locks.nodes.nixpkgs.locked.rev // empty')"
-if [ -n "$yeet_source_path" ] && git -C "$yeet_source_path" rev-parse HEAD >/dev/null 2>&1; then
-	yeet_rev="$(git -C "$yeet_source_path" rev-parse HEAD)"
+if [ -n "$yeet_source_path" ]; then
+	if ! yeet_rev="$(git -C "$yeet_source_path" rev-parse HEAD 2>/dev/null)"; then
+		echo "YEET_SOURCE_PATH must point to a git checkout so manifest provenance can record yeet_rev" >&2
+		exit 1
+	fi
 else
 	yeet_rev="$(printf '%s' "$flake_metadata" | jq -r '.locks.nodes.yeet.locked.rev // empty')"
 fi
