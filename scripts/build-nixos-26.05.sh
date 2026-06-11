@@ -24,7 +24,7 @@ require() {
 	fi
 }
 
-for cmd in awk chmod cp curl date dumpe2fs e2fsck file find jq mkdir mktemp nix readlink resize2fs sha256sum stat tar tune2fs zstd; do
+for cmd in awk chmod cp curl date dumpe2fs e2fsck file find grep install jq mkdir mktemp nix readlink resize2fs sha256sum stat tar tune2fs zstd; do
 	require "$cmd"
 done
 
