@@ -8,7 +8,7 @@ on:
         required: true
         default: nixos-26.05-amd64-v13
       yeet_ref:
-        description: yeet repository ref used to build guest/yeet-init.
+        description: yeet repository ref used to build guest/yeet-init and guest/yeet-agent.
         required: true
         default: main
       firecracker_version:
@@ -172,31 +172,52 @@ jobs:
             .guest_init == "/usr/local/lib/yeet-vm/yeet-init" and
             .guest_system_init == "/run/current-system/init" and
             (.guest_init_sha256 | test("^[0-9a-f]{64}$")) and
+            .guest_agent == "/usr/local/lib/yeet-vm/yeet-agent" and
+            (.guest_agent_sha256 | test("^[0-9a-f]{64}$")) and
             .kernel == "vmlinux" and
             .rootfs == "rootfs.ext4.zst" and
             .kernel_policy == "yeet-managed"
           ' "$OUT_DIR/manifest.json"
-          ssh_keys_command="$(nix eval --extra-experimental-features "nix-command flakes" --raw .#nixosConfigurations.yeet-nixos-26_05.config.services.openssh.authorizedKeysCommand)"
+          nix_common_args=(
+            --extra-experimental-features "nix-command flakes"
+          )
+          if [ -n "${YEET_SOURCE_PATH:-}" ]; then
+            nix_common_args+=(--override-input yeet "path:$YEET_SOURCE_PATH")
+          fi
+          nix_eval_raw() {
+            nix eval "${nix_common_args[@]}" --raw "$1"
+          }
+          nix_eval_json() {
+            nix eval "${nix_common_args[@]}" --json "$1"
+          }
+          ssh_keys_command="$(nix_eval_raw .#nixosConfigurations.yeet-nixos-26_05.config.services.openssh.authorizedKeysCommand)"
           if [ "$ssh_keys_command" != "none" ]; then
             echo "unexpected NixOS AuthorizedKeysCommand: $ssh_keys_command" >&2
             exit 1
           fi
-          nix eval --extra-experimental-features "nix-command flakes" --json .#nixosConfigurations.yeet-nixos-26_05.config.services.openssh.authorizedKeysFiles \
+          yeet_agent_exec="$(nix_eval_raw .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-agent.serviceConfig.ExecStart)"
+          if [ "$yeet_agent_exec" != "/usr/local/lib/yeet-vm/yeet-agent" ]; then
+            echo "unexpected yeet-agent ExecStart: $yeet_agent_exec" >&2
+            exit 1
+          fi
+          nix_eval_json .#nixosConfigurations.yeet-nixos-26_05.config.services.openssh.authorizedKeysFiles \
             | jq -e 'index("/etc/yeet-vm/authorized_keys.d/%u") != null'
-          networkd_metadata_script="$(nix eval --extra-experimental-features "nix-command flakes" --raw .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-networkd-metadata.script)"
+          networkd_metadata_script="$(nix_eval_raw .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-networkd-metadata.script)"
           if printf '%s\n' "$networkd_metadata_script" | grep -q 'compgen'; then
             echo "yeet-networkd-metadata must not depend on Bash-only compgen" >&2
             exit 1
           fi
-          grow_root_script="$(nix eval --extra-experimental-features "nix-command flakes" --raw .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-grow-root.script)"
+          grow_root_script="$(nix_eval_raw .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-grow-root.script)"
           printf '%s\n' "$grow_root_script" | grep -q 'resize2fs "$root_source"'
-          grow_root_before="$(nix eval --extra-experimental-features "nix-command flakes" --json .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-grow-root.before)"
+          grow_root_before="$(nix_eval_json .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-grow-root.before)"
           printf '%s\n' "$grow_root_before" | jq -e 'index("yeet-guest-ready.service") != null'
           grep -q '^CONFIG_MODULES=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_BLK=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_VIRTIO_NET=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_VSOCKETS=y$' "$OUT_DIR/kernel.config"
+          grep -q '^CONFIG_VIRTIO_VSOCKETS=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_EXT4_FS=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_AUTOFS_FS=y$' "$OUT_DIR/kernel.config"
           grep -q '^CONFIG_IP_PNP=y$' "$OUT_DIR/kernel.config"
@@ -277,6 +298,11 @@ jobs:
             echo "expected /usr/local/lib/yeet-vm/yeet-init to exist as a symlink" >&2
             exit 1
           fi
+          yeet_agent_dump="$(find "$yeet_vm_dump" -name yeet-agent -type l -print -quit)"
+          if [ -z "$yeet_agent_dump" ]; then
+            echo "expected /usr/local/lib/yeet-vm/yeet-agent to exist as a symlink" >&2
+            exit 1
+          fi
           yeet_init_link="$(readlink "$yeet_init_dump")"
           case "$yeet_init_link" in
             /nix/store/*/bin/yeet-init)
@@ -287,6 +313,16 @@ jobs:
               ;;
           esac
           assert_path_exists "$yeet_init_link"
+          yeet_agent_link="$(readlink "$yeet_agent_dump")"
+          case "$yeet_agent_link" in
+            /nix/store/*/bin/yeet-agent)
+              ;;
+            *)
+              echo "expected /usr/local/lib/yeet-vm/yeet-agent to point at a Nix store yeet-agent binary, got ${yeet_agent_link:-missing}" >&2
+              exit 1
+              ;;
+          esac
+          assert_path_exists "$yeet_agent_link"
           jq . "$OUT_DIR/manifest.json"
 
       - name: Prepare release notes
@@ -302,6 +338,7 @@ jobs:
           - Kernel: \`$kernel_version\`
           - Nixpkgs: \`nixos-26.05\` (\`$nixpkgs_rev\`)
           - Metadata driver: \`nixos\`
+          - Guest tools: \`yeet-init\` and \`yeet-agent\`
           - Nix: flakes and plain \`sudo nixos-rebuild switch\` are supported out of the box
           - Firecracker: \`$firecracker_version\`
 

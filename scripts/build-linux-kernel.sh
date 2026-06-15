@@ -75,6 +75,8 @@ echo "Configuring yeet Firecracker kernel..."
 		--enable VIRTIO_MMIO_CMDLINE_DEVICES \
 		--enable VIRTIO_BLK \
 		--enable VIRTIO_NET \
+		--enable VSOCKETS \
+		--enable VIRTIO_VSOCKETS \
 		--enable IP_PNP \
 		--enable IP_PNP_DHCP \
 		--enable EXT4_FS \
@@ -150,6 +152,8 @@ require_config CONFIG_VIRTIO_MMIO y
 require_config CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES y
 require_config CONFIG_VIRTIO_BLK y
 require_config CONFIG_VIRTIO_NET y
+require_config CONFIG_VSOCKETS y
+require_config CONFIG_VIRTIO_VSOCKETS y
 require_config CONFIG_IP_PNP y
 require_config CONFIG_IP_PNP_DHCP y
 require_config CONFIG_EXT4_FS y

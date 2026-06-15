@@ -81,6 +81,8 @@ fi
 install -m 0644 "$rootfs_result" "$out_dir/rootfs.ext4"
 nix build "${nix_common_args[@]}" --out-link "$work_dir/yeet-init-result" .#yeet-init
 yeet_init_result="$(readlink -f "$work_dir/yeet-init-result")"
+nix build "${nix_common_args[@]}" --out-link "$work_dir/yeet-agent-result" .#yeet-agent
+yeet_agent_result="$(readlink -f "$work_dir/yeet-agent-result")"
 
 run_e2fsck() {
 	local rootfs="$1"
@@ -156,6 +158,7 @@ else
 	yeet_rev="$(printf '%s' "$flake_metadata" | jq -r '.locks.nodes.yeet.locked.rev // empty')"
 fi
 guest_init_sha="$(sha256sum "$yeet_init_result/bin/yeet-init" | awk '{ print $1 }')"
+guest_agent_sha="$(sha256sum "$yeet_agent_result/bin/yeet-agent" | awk '{ print $1 }')"
 
 kernel_config_checksum_line=""
 if [ -f "$out_dir/kernel.config" ]; then
@@ -177,6 +180,8 @@ cat >"$out_dir/manifest.json" <<JSON
   "guest_init": "/usr/local/lib/yeet-vm/yeet-init",
   "guest_system_init": "/run/current-system/init",
   "guest_init_sha256": "$guest_init_sha",
+  "guest_agent": "/usr/local/lib/yeet-vm/yeet-agent",
+  "guest_agent_sha256": "$guest_agent_sha",
   "metadata_driver": "nixos",
   "kernel": "vmlinux",
   "rootfs": "rootfs.ext4.zst",

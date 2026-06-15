@@ -27,6 +27,14 @@
         doCheck = false;
       };
 
+      yeetAgent = pkgs.rustPlatform.buildRustPackage {
+        pname = "yeet-agent";
+        version = "0.1.0";
+        src = "${yeet}/guest/yeet-agent";
+        cargoLock.lockFile = "${yeet}/guest/yeet-agent/Cargo.lock";
+        doCheck = false;
+      };
+
       nixosSystem = nixpkgs.lib.nixosSystem {
         inherit system;
         modules = [
@@ -50,6 +58,7 @@
         storePaths = [
           nixosSystem.config.system.build.toplevel
           yeetInit
+          yeetAgent
         ];
         volumeLabel = "nixos";
         populateImageCommands = ''
@@ -67,6 +76,7 @@
           ln -s /nix/var/nix/profiles/system ./files/nix/var/nix/gcroots/current-system
           ln -s /nix/var/nix/profiles/system ./files/run/current-system
           ln -s ${yeetInit}/bin/yeet-init ./files/usr/local/lib/yeet-vm/yeet-init
+          ln -s ${yeetAgent}/bin/yeet-agent ./files/usr/local/lib/yeet-vm/yeet-agent
 
           cp ${./nixos/configuration.nix} ./files/etc/nixos/configuration.nix
           cp ${./nixos/yeet-vm.nix} ./files/etc/nixos/yeet-vm.nix
@@ -78,6 +88,7 @@
       nixosConfigurations.yeet-nixos-26_05 = nixosSystem;
       packages.${system} = {
         yeet-init = yeetInit;
+        yeet-agent = yeetAgent;
         nixos-26_05-rootfs = nixosRootfs;
         default = nixosRootfs;
       };

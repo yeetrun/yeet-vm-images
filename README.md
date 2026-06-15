@@ -29,7 +29,8 @@ NixOS publishes both immutable version releases and a stable latest alias:
 The current Ubuntu bundle version is `ubuntu-26.04-amd64-v14`. It is built from
 the official Ubuntu 26.04 cloud image, boots a yeet-managed kernel under
 Firecracker direct kernel boot, uses `/usr/local/lib/yeet-vm/yeet-init` as the
-pre-systemd init shim, and omits `initrd.img`.
+pre-systemd init shim, includes `yeet-agent` for live vsock network state
+queries, and omits `initrd.img`.
 
 ### Fast Profile
 
@@ -48,10 +49,12 @@ paths that manage `/proc/sys/kernel/modprobe` keep working normally:
 scripts/build-linux-kernel.sh dist/kernel-linux-7.0
 cd ../yeet
 mise run guest:init:build
+mise run guest:agent:build
 cd ../yeet-vm-images
 sudo YEET_VM_KERNEL_PATH="$PWD/dist/kernel-linux-7.0/vmlinux" \
   YEET_VM_KERNEL_VERSION=linux-7.0-yeet \
   YEET_VM_INIT_PATH="$PWD/../yeet/guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init" \
+  YEET_VM_AGENT_PATH="$PWD/../yeet/guest/yeet-agent/target/x86_64-unknown-linux-musl/release/yeet-agent" \
   scripts/build-ubuntu-26.04.sh
 ```
 
@@ -70,6 +73,9 @@ The fast profile customizes the Ubuntu rootfs before compression:
 - writes `/usr/share/doc/yeet-vm-image/init.md` explaining the pre-systemd
   `yeet-init` path and readiness flow;
 - installs the Rust `yeet-init` binary into `/usr/local/lib/yeet-vm/yeet-init`;
+- installs `/usr/local/lib/yeet-vm/yeet-agent` and enables
+  `yeet-agent.service` so catch can query current guest network state over
+  Firecracker vsock;
 - compiles Ghostty's `xterm-ghostty` terminfo into `/etc/terminfo` so terminal
   applications recognize that TERM value out of the box;
 - keeps `iptables`, `nftables`, and `rsync` userspace tools installed for
@@ -125,6 +131,7 @@ NixOS image metadata:
 - `default_user`: `nixos`
 - `metadata_driver`: `nixos`
 - `guest_init`: `/usr/local/lib/yeet-vm/yeet-init`
+- `guest_agent`: `/usr/local/lib/yeet-vm/yeet-agent`
 - `guest_system_init`: `/run/current-system/init`
 
 The NixOS module:
@@ -139,6 +146,8 @@ The NixOS module:
   the NixOS OpenSSH `authorizedKeysFiles` option;
 - grows the ext4 root filesystem at boot before yeet reports guest readiness,
   so ZFS-backed clones use the requested VM disk size;
+- enables `yeet-agent.service` so catch can query current guest network state
+  over Firecracker vsock;
 - disables Firecracker-inapplicable static `modprobe@...` startup units and
   clears upstream generic hardware module requests because yeet kernels build
   the microVM drivers in and the image does not ship a module tree;
@@ -166,13 +175,15 @@ Local Nix checks:
 
 ```bash
 mise run lint
-scripts/verify-nixos-26.05.sh
+YEET_SOURCE_PATH="$PWD/../yeet" scripts/verify-nixos-26.05.sh
 ```
 
 `mise run lint` runs `deadnix`, `nixpkgs-fmt --check`, and `statix check`
 against the flake and NixOS module. The verifier checks the yeet microVM
 profile, service wiring, metadata integration, rebuild defaults, terminfo
-integration, and user overrideability.
+integration, guest tool packaging, and user overrideability. Set
+`YEET_SOURCE_PATH` while testing yeet changes that have not reached the
+`flake.lock` yeet input yet.
 
 ## Publish a New Bundle
 
@@ -181,13 +192,15 @@ integration, and user overrideability.
 Use the **Build Ubuntu 26.04 VM image** GitHub Actions workflow from the
 Actions tab. It is manually dispatched and runs on a GitHub-hosted Linux
 runner. The workflow checks out yeet at `yeet_ref`, builds the Rust
-`yeet-init`, builds the managed kernel, customizes the Ubuntu rootfs, verifies
-the bundle, and publishes the release assets.
+`yeet-init` and `yeet-agent` guest tools, builds the managed kernel,
+customizes the Ubuntu rootfs, verifies the bundle, and publishes the release
+assets.
 
 Inputs:
 
 - `version`: release and image version, for example `ubuntu-26.04-amd64-v14`
-- `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
+- `yeet_ref`: yeet repository ref used to build `guest/yeet-init` and
+  `guest/yeet-agent`
 - `ubuntu_cloud_base_url`: Ubuntu cloud image directory URL
 - `ubuntu_cloud_image`: Ubuntu cloud image tarball name
 - `firecracker_version`: Firecracker release version
@@ -206,9 +219,10 @@ Inputs:
 
 The workflow validates `checksums.txt`, confirms the fast image has no
 `initrd.img`, checks the required kernel config values, verifies the embedded
-`yeet-init`, terminfo, router rootfs defaults, Ubuntu-compatible package paths,
-host-compatible ext4 rootfs features, and guest init manifest metadata, prints
-the manifest, and publishes the release assets.
+`yeet-init` and `yeet-agent`, terminfo, router rootfs defaults,
+Ubuntu-compatible package paths, host-compatible ext4 rootfs features, and
+guest tool manifest metadata, prints the manifest, and publishes the release
+assets.
 
 ### NixOS
 
@@ -220,7 +234,8 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 Inputs:
 
 - `version`: release and image version, for example `nixos-26.05-amd64-v13`
-- `yeet_ref`: yeet repository ref used to build `guest/yeet-init`
+- `yeet_ref`: yeet repository ref used to build `guest/yeet-init` and
+  `guest/yeet-agent`
 - `kernel_version`: Linux kernel version to build
 - `kernel_source_url`: Linux kernel source tarball URL
 - `kernel_source_sha256`: Linux kernel source tarball SHA-256
@@ -235,5 +250,6 @@ Inputs:
 
 The workflow validates the NixOS microVM profile, checks `checksums.txt`,
 checks the required kernel config values, verifies NixOS system links, confirms
-the embedded `yeet-init`, checks the Ghostty terminfo source, verifies NixOS
-manifest metadata, prints the manifest, and publishes the release assets.
+the embedded `yeet-init` and `yeet-agent`, checks the Ghostty terminfo source,
+verifies NixOS manifest metadata, prints the manifest, and publishes the
+release assets.

@@ -12,6 +12,7 @@ work_dir="${YEET_VM_IMAGE_WORK_DIR:-}"
 kernel_path="${YEET_VM_KERNEL_PATH:-}"
 kernel_version_override="${YEET_VM_KERNEL_VERSION:-}"
 guest_init_path="${YEET_VM_INIT_PATH:-}"
+guest_agent_path="${YEET_VM_AGENT_PATH:-}"
 script_source="${BASH_SOURCE[0]}"
 script_dir="${script_source%/*}"
 if [ "$script_dir" = "$script_source" ]; then
@@ -69,6 +70,14 @@ if [ "$profile" = "fast" ]; then
 	fi
 	if [ ! -x "$guest_init_path" ]; then
 		echo "YEET_VM_INIT_PATH is not executable: $guest_init_path" >&2
+		exit 1
+	fi
+	if [ -z "$guest_agent_path" ]; then
+		echo "YEET_VM_AGENT_PATH is required for the fast profile" >&2
+		exit 1
+	fi
+	if [ ! -x "$guest_agent_path" ]; then
+		echo "YEET_VM_AGENT_PATH is not executable: $guest_agent_path" >&2
 		exit 1
 	fi
 	if [ ! -r "$ghostty_terminfo_source" ]; then
@@ -366,7 +375,25 @@ customize_fast_rootfs() {
 
 	write_fast_rootfs_policy_files "$rootfs_mount"
 	install -d -m 0755 "$rootfs_mount/usr/local/lib/yeet-vm"
+	install -d -m 0755 "$rootfs_mount/etc/systemd/system/multi-user.target.wants"
 	install -m 0755 "$guest_init_path" "$rootfs_mount/usr/local/lib/yeet-vm/yeet-init"
+	install -m 0755 "$guest_agent_path" "$rootfs_mount/usr/local/lib/yeet-vm/yeet-agent"
+	cat >"$rootfs_mount/etc/systemd/system/yeet-agent.service" <<'UNIT'
+[Unit]
+Description=yeet VM guest agent
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/yeet-vm/yeet-agent
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+	ln -sf ../yeet-agent.service "$rootfs_mount/etc/systemd/system/multi-user.target.wants/yeet-agent.service"
 	install_fast_rootfs_terminfo "$rootfs_mount"
 	cat >"$rootfs_mount/usr/sbin/policy-rc.d" <<'EOF'
 #!/bin/sh
@@ -498,14 +525,18 @@ build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 snap_support=false
 kernel_policy="yeet-managed"
 guest_init="/usr/local/lib/yeet-vm/yeet-init"
+guest_agent="/usr/local/lib/yeet-vm/yeet-agent"
 guest_init_sha=""
+guest_agent_sha=""
 if [ "$profile" = "fast" ]; then
 	guest_init_sha="$(sha256sum "$guest_init_path" | awk '{ print $1 }')"
+	guest_agent_sha="$(sha256sum "$guest_agent_path" | awk '{ print $1 }')"
 fi
 if [ "$profile" = "stock" ]; then
 	snap_support=true
 	kernel_policy="ubuntu-kernel-with-initrd"
 	guest_init=""
+	guest_agent=""
 fi
 initrd_manifest_line=""
 initrd_checksum_line=""
@@ -525,6 +556,8 @@ cat >"$out_dir/manifest.json" <<JSON
   "snap_support": $snap_support,
   "guest_init": "$guest_init",
   "guest_init_sha256": "$guest_init_sha",
+  "guest_agent": "$guest_agent",
+  "guest_agent_sha256": "$guest_agent_sha",
   "kernel": "vmlinux",
 $initrd_manifest_line
   "rootfs": "rootfs.ext4.zst",

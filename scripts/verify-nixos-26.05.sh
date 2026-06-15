@@ -24,90 +24,104 @@ for cmd in grep jq nix; do
 	require "$cmd"
 done
 
-nix_eval_json() {
-	local attr="$1"
-	nix eval --extra-experimental-features "nix-command flakes" --json ".#nixosConfigurations.yeet-nixos-26_05.config.${attr}"
-}
-
-nix_eval_raw() {
-	local attr="$1"
-	nix eval --extra-experimental-features "nix-command flakes" --raw ".#nixosConfigurations.yeet-nixos-26_05.config.${attr}"
-}
-
-assert_json() {
-	local attr="$1"
-	local jq_filter="$2"
-	local message="$3"
-	nix_eval_json "$attr" | jq -e "$jq_filter" >/dev/null || {
-		echo "$message" >&2
-		echo "attr: $attr" >&2
-		echo "want: $jq_filter" >&2
-		echo "got:" >&2
-		nix_eval_json "$attr" >&2
-		exit 1
-	}
-}
-
-assert_raw_equals() {
-	local attr="$1"
-	local want="$2"
-	local got
-	got="$(nix_eval_raw "$attr")"
-	if [ "$got" != "$want" ]; then
-		echo "unexpected $attr: got $got, want $want" >&2
+nix_common_args=(
+	--extra-experimental-features "nix-command flakes"
+)
+if [ -n "${YEET_SOURCE_PATH:-}" ]; then
+	if [ ! -d "$YEET_SOURCE_PATH" ]; then
+		echo "YEET_SOURCE_PATH is not a directory: $YEET_SOURCE_PATH" >&2
 		exit 1
 	fi
-}
-
-assert_json "nix.settings.experimental-features" 'index("nix-command") != null and index("flakes") != null' "nix-command and flakes must be enabled by default"
-assert_json "nix.nixPath" 'index("nixpkgs=flake:nixpkgs") != null and index("nixos-config=/etc/nixos/configuration.nix") != null' "nixos-rebuild must find nixpkgs and /etc/nixos/configuration.nix by default"
-assert_json "environment.pathsToLink" 'index("/share/terminfo") != null' "terminfo must be linked into the system profile for Ghostty support"
-assert_json "environment.etc.terminfo.enable" '. == false' "/etc/terminfo must not be managed as a symlink because make-ext4-fs materializes it as a directory"
-assert_json "environment.systemPackages" 'map(tostring) | any(contains("rsync"))' "rsync must be installed for yeet VM copy"
-assert_json "boot.modprobeConfig.enable" '. == true' "NixOS activation expects boot.modprobeConfig for /proc/sys/kernel/modprobe"
-assert_json "boot.kernelModules" '. == []' "default NixOS hardware module requests must be cleared for the yeet microVM kernel"
-
-for unit in \
-	'modprobe@configfs' \
-	'modprobe@drm' \
-	'modprobe@efi_pstore' \
-	'modprobe@fuse'
-do
-	assert_json "systemd.services.\"${unit}\".enable" '. == false' "$unit must be disabled by default in the yeet microVM profile"
-done
-
-assert_raw_equals "services.openssh.authorizedKeysCommand" "none"
-nix_eval_json "services.openssh.authorizedKeysFiles" \
-	| jq -e 'index("/etc/yeet-vm/authorized_keys.d/%u") != null' >/dev/null
-
-networkd_metadata_script="$(nix_eval_raw "systemd.services.yeet-networkd-metadata.script")"
-if printf '%s\n' "$networkd_metadata_script" | grep -q 'compgen'; then
-	echo "yeet-networkd-metadata must not depend on Bash-only compgen" >&2
-	exit 1
+	yeet_source_path="$(cd "$YEET_SOURCE_PATH" && pwd)"
+	nix_common_args+=(--override-input yeet "path:$yeet_source_path")
 fi
 
-grow_root_script="$(nix_eval_raw "systemd.services.yeet-grow-root.script")"
-printf '%s\n' "$grow_root_script" | grep -q 'resize2fs "$root_source"'
-nix_eval_json "systemd.services.yeet-grow-root.before" \
-	| jq -e 'index("yeet-guest-ready.service") != null' >/dev/null
+config_probe="$(
+	nix eval "${nix_common_args[@]}" --json ".#nixosConfigurations.yeet-nixos-26_05.config" --apply '
+cfg:
+let
+  serviceNames = [
+    "sshd"
+    "systemd-networkd"
+    "systemd-resolved"
+    "yeet-agent"
+    "yeet-metadata-hostname"
+    "yeet-networkd-metadata"
+    "yeet-grow-root"
+    "yeet-guest-ready"
+  ];
+  modprobeUnits = [
+    "modprobe@configfs"
+    "modprobe@drm"
+    "modprobe@efi_pstore"
+    "modprobe@fuse"
+  ];
+  serviceEnabled = builtins.listToAttrs (map
+    (name: {
+      inherit name;
+      value = (builtins.getAttr name cfg.systemd.services).enable;
+    })
+    serviceNames);
+  modprobeEnabled = builtins.listToAttrs (map
+    (name: {
+      inherit name;
+      value = (builtins.getAttr name cfg.systemd.services).enable;
+    })
+    modprobeUnits);
+in {
+  nixFeatures = cfg.nix.settings.experimental-features;
+  nixPath = cfg.nix.nixPath;
+  environmentPathsToLink = cfg.environment.pathsToLink;
+  etcTerminfoEnable = cfg.environment.etc.terminfo.enable;
+  systemPackages = map builtins.toString cfg.environment.systemPackages;
+  bootModprobeConfigEnable = cfg.boot.modprobeConfig.enable;
+  bootKernelModules = cfg.boot.kernelModules;
+  modprobeEnabled = modprobeEnabled;
+  sshKeysCommand = cfg.services.openssh.authorizedKeysCommand;
+  sshAuthorizedKeysFiles = cfg.services.openssh.authorizedKeysFiles;
+  networkdMetadataScript = cfg.systemd.services.yeet-networkd-metadata.script;
+  growRootScript = cfg.systemd.services.yeet-grow-root.script;
+  growRootBefore = cfg.systemd.services.yeet-grow-root.before;
+  serviceEnabled = serviceEnabled;
+  yeetAgentExec = cfg.systemd.services.yeet-agent.serviceConfig.ExecStart;
+}
+'
+)"
 
-for service in \
-	"sshd" \
-	"systemd-networkd" \
-	"systemd-resolved" \
-	"yeet-metadata-hostname" \
-	"yeet-networkd-metadata" \
-	"yeet-grow-root" \
-	"yeet-guest-ready"
-do
-	nix_eval_json "systemd.services.${service}.enable" | jq -e '. == true' >/dev/null || {
-		echo "expected service ${service} to be enabled" >&2
+assert_probe() {
+	local jq_filter="$1"
+	local message="$2"
+	printf '%s\n' "$config_probe" | jq -e "$jq_filter" >/dev/null || {
+		echo "$message" >&2
+		echo "want: $jq_filter" >&2
+		echo "got:" >&2
+		printf '%s\n' "$config_probe" >&2
 		exit 1
 	}
-done
+}
+
+assert_probe '.nixFeatures | index("nix-command") != null and index("flakes") != null' "nix-command and flakes must be enabled by default"
+assert_probe '.nixPath | index("nixpkgs=flake:nixpkgs") != null and index("nixos-config=/etc/nixos/configuration.nix") != null' "nixos-rebuild must find nixpkgs and /etc/nixos/configuration.nix by default"
+assert_probe '.environmentPathsToLink | index("/share/terminfo") != null' "terminfo must be linked into the system profile for Ghostty support"
+assert_probe '.etcTerminfoEnable == false' "/etc/terminfo must not be managed as a symlink because make-ext4-fs materializes it as a directory"
+assert_probe '.systemPackages | map(tostring) | any(contains("rsync"))' "rsync must be installed for yeet VM copy"
+assert_probe '.bootModprobeConfigEnable == true' "NixOS activation expects boot.modprobeConfig for /proc/sys/kernel/modprobe"
+assert_probe '.bootKernelModules == []' "default NixOS hardware module requests must be cleared for the yeet microVM kernel"
+assert_probe '.modprobeEnabled["modprobe@configfs"] == false and .modprobeEnabled["modprobe@drm"] == false and .modprobeEnabled["modprobe@efi_pstore"] == false and .modprobeEnabled["modprobe@fuse"] == false' "modprobe@ units must be disabled by default in the yeet microVM profile"
+assert_probe '.sshKeysCommand == "none"' "unexpected NixOS AuthorizedKeysCommand"
+assert_probe '.sshAuthorizedKeysFiles | index("/etc/yeet-vm/authorized_keys.d/%u") != null' "NixOS SSH keys must include yeet metadata keys"
+assert_probe '.networkdMetadataScript | contains("compgen") | not' "yeet-networkd-metadata must not depend on Bash-only compgen"
+assert_probe '.growRootScript | contains("resize2fs \"$root_source\"")' "yeet-grow-root must resize the root source"
+assert_probe '.growRootBefore | index("yeet-guest-ready.service") != null' "yeet-grow-root must run before yeet guest readiness"
+assert_probe '.serviceEnabled | all(.[]; . == true)' "expected core yeet NixOS services to be enabled"
+assert_probe '.yeetAgentExec == "/usr/local/lib/yeet-vm/yeet-agent"' "unexpected yeet-agent ExecStart"
+grep -Fq 'ln -s ${yeetAgent}/bin/yeet-agent ./files/usr/local/lib/yeet-vm/yeet-agent' "$repo_root/flake.nix" || {
+	echo "NixOS rootfs must include /usr/local/lib/yeet-vm/yeet-agent" >&2
+	exit 1
+}
 
 override_probe="$(
-	nix eval --impure --extra-experimental-features "nix-command flakes" --json --expr '
+	nix eval --impure "${nix_common_args[@]}" --json --expr '
 let
   flake = builtins.getFlake "path:'"$repo_root"'";
   modprobeUnits = [

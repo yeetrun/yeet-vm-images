@@ -270,6 +270,19 @@ in
         };
       };
 
+      yeet-agent = {
+        description = "yeet VM guest agent";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "network.target" ];
+        wants = [ "network.target" ];
+        serviceConfig = {
+          Type = "simple";
+          ExecStart = "/usr/local/lib/yeet-vm/yeet-agent";
+          Restart = "always";
+          RestartSec = 1;
+        };
+      };
+
       yeet-guest-ready = {
         description = "yeet-ready guest marker";
         wantedBy = [ "multi-user.target" ];
