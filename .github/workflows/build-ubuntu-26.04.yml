@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Release/image version to publish.
+        description: Release/image version to publish, for example ubuntu-26.04-amd64-v16.
         required: true
-        default: ubuntu-26.04-amd64-v14
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init and guest/yeet-agent.
         required: true
@@ -107,6 +106,7 @@ jobs:
             bc \
             bison \
             build-essential \
+            curl \
             dwarves \
             e2fsprogs \
             file \
@@ -118,6 +118,9 @@ jobs:
             ncurses-bin \
             xz-utils \
             zstd
+
+      - name: Verify catalog
+        run: scripts/verify-catalog.sh
 
       - name: Install mise
         run: |

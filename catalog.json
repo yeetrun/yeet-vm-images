@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "images": [
+    {
+      "payload": "vm://ubuntu/26.04",
+      "name": "Ubuntu 26.04",
+      "architecture": "amd64",
+      "manifest_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/ubuntu-26.04-amd64-latest/manifest.json",
+      "version_prefix": "ubuntu-26.04-amd64-",
+      "default_user": "ubuntu",
+      "metadata_driver": "ubuntu",
+      "capabilities": ["guest_init", "guest_agent", "rsync"],
+      "default": true
+    },
+    {
+      "payload": "vm://nixos/26.05",
+      "name": "NixOS 26.05",
+      "architecture": "amd64",
+      "manifest_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/nixos-26.05-amd64-latest/manifest.json",
+      "version_prefix": "nixos-26.05-amd64-",
+      "default_user": "nixos",
+      "metadata_driver": "nixos",
+      "capabilities": ["guest_init", "guest_agent", "rsync"]
+    }
+  ]
+}

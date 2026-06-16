@@ -24,13 +24,17 @@ NixOS publishes both immutable version releases and a stable latest alias:
 
 `https://github.com/yeetrun/yeet-vm-images/releases/download/nixos-26.05-amd64-latest/manifest.json`
 
+`catalog.json` is the source of truth for official VM image families. It maps
+payloads such as `vm://ubuntu/26.04` to stable latest manifest URLs. Publishing
+a new image version only updates the immutable release and the matching
+`*-latest` release; edit `catalog.json` only when adding or changing a family.
+
 ## Ubuntu 26.04
 
-The current Ubuntu bundle version is `ubuntu-26.04-amd64-v14`. It is built from
-the official Ubuntu 26.04 cloud image, boots a yeet-managed kernel under
-Firecracker direct kernel boot, uses `/usr/local/lib/yeet-vm/yeet-init` as the
-pre-systemd init shim, includes `yeet-agent` for live vsock network state
-queries, and omits `initrd.img`.
+The Ubuntu family is built from the official Ubuntu 26.04 cloud image, boots a
+yeet-managed kernel under Firecracker direct kernel boot, uses
+`/usr/local/lib/yeet-vm/yeet-init` as the pre-systemd init shim, includes
+`yeet-agent` for live vsock network state queries, and omits `initrd.img`.
 
 ### Fast Profile
 
@@ -198,7 +202,7 @@ assets.
 
 Inputs:
 
-- `version`: release and image version, for example `ubuntu-26.04-amd64-v14`
+- `version`: release and image version matching `ubuntu-26.04-amd64-v<N>`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init` and
   `guest/yeet-agent`
 - `ubuntu_cloud_base_url`: Ubuntu cloud image directory URL
@@ -233,7 +237,7 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
-- `version`: release and image version, for example `nixos-26.05-amd64-v13`
+- `version`: release and image version matching `nixos-26.05-amd64-v<N>`
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init` and
   `guest/yeet-agent`
 - `kernel_version`: Linux kernel version to build

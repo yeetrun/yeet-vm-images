@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Release/image version to publish.
+        description: Release/image version to publish, for example nixos-26.05-amd64-v14.
         required: true
-        default: nixos-26.05-amd64-v13
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init and guest/yeet-agent.
         required: true
@@ -119,6 +118,7 @@ jobs:
           nix --extra-experimental-features "nix-command flakes" run nixpkgs#nixpkgs-fmt -- --check .
           nix --extra-experimental-features "nix-command flakes" run nixpkgs#statix -- check .
           scripts/verify-nixos-26.05.sh
+          scripts/verify-catalog.sh
 
       - name: Build yeet-managed kernel
         run: |
