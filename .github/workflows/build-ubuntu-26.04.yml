@@ -1,6 +1,82 @@
 name: Build Ubuntu 26.04 VM image
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: Release/image version to publish, for example ubuntu-26.04-amd64-v16.
+        required: true
+        type: string
+      yeet_ref:
+        description: yeet repository ref used to build guest/yeet-init and guest/yeet-agent.
+        required: false
+        type: string
+        default: main
+      ubuntu_cloud_base_url:
+        description: Ubuntu cloud image directory URL.
+        required: false
+        type: string
+        default: https://cloud-images.ubuntu.com/resolute/current
+      ubuntu_cloud_image:
+        description: Ubuntu cloud image tarball name.
+        required: false
+        type: string
+        default: resolute-server-cloudimg-amd64.tar.gz
+      firecracker_version:
+        description: Firecracker release version.
+        required: false
+        type: string
+        default: v1.14.3
+      kernel_version:
+        description: Linux kernel version to build.
+        required: false
+        type: string
+        default: "7.0"
+      upstream_kernel_version:
+        description: Upstream Linux kernel version, without linux- prefix or yeet localversion.
+        required: false
+        type: string
+        default: "7.0"
+      image_revision:
+        description: Numeric per-family image revision.
+        required: false
+        type: string
+        default: "0"
+      kernel_source_url:
+        description: Linux kernel source tarball URL.
+        required: false
+        type: string
+        default: https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.0.tar.xz
+      kernel_source_sha256:
+        description: Linux kernel source tarball SHA-256.
+        required: false
+        type: string
+        default: bb7f6d80b387c757b7d14bb93028fcb90f793c5c0d367736ee815a100b3891f0
+      kernel_config_url:
+        description: Firecracker guest kernel config URL.
+        required: false
+        type: string
+        default: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
+      zstd_level:
+        description: zstd compression level for rootfs.ext4.zst.
+        required: false
+        type: string
+        default: "10"
+      overwrite_release:
+        description: Delete an existing release/tag with the same version before publishing.
+        required: false
+        type: boolean
+        default: false
+      publish_latest_alias:
+        description: Publish or refresh the catch-facing latest alias release.
+        required: false
+        type: boolean
+        default: true
+      latest_alias:
+        description: Release/tag name for the catch-facing latest alias.
+        required: false
+        type: string
+        default: ubuntu-26.04-amd64-latest
   workflow_dispatch:
     inputs:
       version:
@@ -26,6 +102,14 @@ on:
         description: Linux kernel version to build.
         required: true
         default: "7.0"
+      upstream_kernel_version:
+        description: Upstream Linux kernel version, without linux- prefix or yeet localversion.
+        required: true
+        default: "7.0"
+      image_revision:
+        description: Numeric per-family image revision.
+        required: true
+        default: "0"
       kernel_source_url:
         description: Linux kernel source tarball URL.
         required: true
@@ -80,6 +164,8 @@ jobs:
       YEET_KERNEL_CONFIG_URL: ${{ inputs.kernel_config_url }}
       YEET_KERNEL_WORK_DIR: ${{ github.workspace }}/.kernel-build-work
       YEET_VM_IMAGE_VERSION: ${{ inputs.version }}
+      YEET_VM_UPSTREAM_KERNEL_VERSION: ${{ inputs.upstream_kernel_version }}
+      YEET_VM_IMAGE_REVISION: ${{ inputs.image_revision }}
       YEET_VM_IMAGE_PROFILE: fast
       YEET_VM_IMAGE_WORK_DIR: ${{ github.workspace }}/.build-work
       YEET_VM_INIT_BINARY: ${{ github.workspace }}/yeet-src/guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init
@@ -146,8 +232,12 @@ jobs:
             FIRECRACKER_VERSION="$FIRECRACKER_VERSION" \
             UBUNTU_CLOUD_BASE_URL="$UBUNTU_CLOUD_BASE_URL" \
             UBUNTU_CLOUD_IMAGE="$UBUNTU_CLOUD_IMAGE" \
+            YEET_KERNEL_SOURCE_URL="$YEET_KERNEL_SOURCE_URL" \
+            YEET_KERNEL_SOURCE_SHA256="$YEET_KERNEL_SOURCE_SHA256" \
             YEET_VM_IMAGE_PROFILE="$YEET_VM_IMAGE_PROFILE" \
             YEET_VM_IMAGE_VERSION="$YEET_VM_IMAGE_VERSION" \
+            YEET_VM_UPSTREAM_KERNEL_VERSION="$YEET_VM_UPSTREAM_KERNEL_VERSION" \
+            YEET_VM_IMAGE_REVISION="$YEET_VM_IMAGE_REVISION" \
             YEET_VM_IMAGE_WORK_DIR="$YEET_VM_IMAGE_WORK_DIR" \
             YEET_VM_GHOSTTY_TERMINFO="$YEET_VM_GHOSTTY_TERMINFO" \
             YEET_VM_INIT_PATH="$YEET_VM_INIT_BINARY" \
@@ -201,6 +291,11 @@ jobs:
             (.guest_agent_sha256 | test("^[0-9a-f]{64}$")) and
             .kernel == "vmlinux" and
             .rootfs == "rootfs.ext4.zst" and
+            (.image_revision | type == "number") and
+            .image_revision == (env.YEET_VM_IMAGE_REVISION | tonumber) and
+            .upstream_kernel_version == env.YEET_VM_UPSTREAM_KERNEL_VERSION and
+            .kernel_source_url == env.YEET_KERNEL_SOURCE_URL and
+            .kernel_source_sha256 == env.YEET_KERNEL_SOURCE_SHA256 and
             .provenance.kernel_source == "yeet-managed"
           ' "$OUT_DIR/manifest.json"
           grep -q '^CONFIG_MODULES=y$' "$OUT_DIR/kernel.config"
