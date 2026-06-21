@@ -140,7 +140,8 @@ for copy_path in \
 	'cp ${nixos-guest-config}/flake.lock ./files/etc/nixos/flake.lock' \
 	'cp ${nixos-guest-config}/system.nix ./files/etc/nixos/system.nix' \
 	'cp ${nixos-guest-config}/yeet/vm.nix ./files/etc/nixos/yeet/vm.nix' \
-	'cp ${nixos-guest-config}/yeet/assets/xterm-ghostty.terminfo ./files/etc/nixos/yeet/assets/xterm-ghostty.terminfo'
+	'cp ${nixos-guest-config}/yeet/assets/xterm-ghostty.terminfo ./files/etc/nixos/yeet/assets/xterm-ghostty.terminfo' \
+	'ln -s ${nixosSystem.config.environment.etc."yeet-vm/kernel/selected.json".source} ./files/etc/yeet-vm/kernel/selected.json'
 do
 	grep -Fq "$copy_path" "$repo_root/flake.nix" || {
 		echo "NixOS rootfs must copy $copy_path" >&2

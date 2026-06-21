@@ -78,6 +78,7 @@
         populateImageCommands = ''
           mkdir -p \
             ./files/etc/nixos/yeet/assets \
+            ./files/etc/yeet-vm/kernel \
             ./files/etc/yeet-vm/systemd-network \
             ./files/nix/var/nix/gcroots \
             ./files/nix/var/nix/profiles \
@@ -98,6 +99,7 @@
           cp ${nixos-guest-config}/system.nix ./files/etc/nixos/system.nix
           cp ${nixos-guest-config}/yeet/vm.nix ./files/etc/nixos/yeet/vm.nix
           cp ${nixos-guest-config}/yeet/assets/xterm-ghostty.terminfo ./files/etc/nixos/yeet/assets/xterm-ghostty.terminfo
+          ln -s ${nixosSystem.config.environment.etc."yeet-vm/kernel/selected.json".source} ./files/etc/yeet-vm/kernel/selected.json
         '';
       };
     in
