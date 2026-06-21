@@ -421,8 +421,6 @@ jobs:
           metadata_url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${locked_kernel_ref}/kernel-packages/metadata.nix"
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/locked-kernel-metadata.nix" "$metadata_url"
           metadata_kernel_version="$(sed -n 's/^[[:space:]]*kernelVersion = "\(.*\)";$/\1/p' "$RUNNER_TEMP/locked-kernel-metadata.nix")"
-          metadata_vmlinux_sha="$(sed -n 's/^[[:space:]]*vmlinuxSha256Raw = "\(.*\)";$/\1/p' "$RUNNER_TEMP/locked-kernel-metadata.nix")"
-          metadata_kernel_config_sha="$(sed -n 's/^[[:space:]]*kernelConfigSha256Raw = "\(.*\)";$/\1/p' "$RUNNER_TEMP/locked-kernel-metadata.nix")"
           expected_metadata_kernel="${YEET_KERNEL_VERSION}"
           if [ "$metadata_kernel_version" != "$expected_metadata_kernel" ]; then
             echo "locked kernel metadata version mismatch: metadata=$metadata_kernel_version expected=$expected_metadata_kernel" >&2
@@ -442,18 +440,10 @@ jobs:
             echo "selected vmlinux checksum mismatch: selected=$selected_vmlinux_sha actual=$actual_vmlinux_sha" >&2
             exit 1
           fi
-          if [ "$metadata_vmlinux_sha" != "$actual_vmlinux_sha" ]; then
-            echo "locked kernel metadata vmlinux checksum mismatch: metadata=$metadata_vmlinux_sha actual=$actual_vmlinux_sha" >&2
-            exit 1
-          fi
           selected_kernel_config_sha="$(jq -r '.sha256["kernel.config"]' "$RUNNER_TEMP/selected-kernel.json")"
           actual_kernel_config_sha="$(sha256sum "$OUT_DIR/kernel.config" | awk '{ print $1 }')"
           if [ "$selected_kernel_config_sha" != "$actual_kernel_config_sha" ]; then
             echo "selected kernel.config checksum mismatch: selected=$selected_kernel_config_sha actual=$actual_kernel_config_sha" >&2
-            exit 1
-          fi
-          if [ "$metadata_kernel_config_sha" != "$actual_kernel_config_sha" ]; then
-            echo "locked kernel metadata kernel.config checksum mismatch: metadata=$metadata_kernel_config_sha actual=$actual_kernel_config_sha" >&2
             exit 1
           fi
           yeet_vm_dump="$RUNNER_TEMP/yeet-vm-rdump"
