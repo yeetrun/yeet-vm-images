@@ -50,7 +50,10 @@ data-only selector under `/etc/yeet-vm/kernel/selected.json`.
 Ubuntu guests can add the apt source and install or upgrade the package:
 
 ```bash
-printf 'Types: deb\nURIs: https://yeetrun.github.io/yeet-vm-images/apt\nSuites: stable\nComponents: main\nArchitectures: amd64\nTrusted: yes\n' | sudo tee /etc/apt/sources.list.d/yeet-vm-kernel.sources
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://yeetrun.github.io/yeet-vm-images/apt/yeet-vm-kernel-archive-keyring.gpg | sudo tee /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg >/dev/null
+sudo chmod 0644 /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg
+printf 'Types: deb\nURIs: https://yeetrun.github.io/yeet-vm-images/apt\nSuites: stable\nComponents: main\nArchitectures: amd64\nSigned-By: /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg\n' | sudo tee /etc/apt/sources.list.d/yeet-vm-kernel.sources
 sudo apt update
 sudo apt install yeet-vm-kernel
 ```

@@ -44,7 +44,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y apt-utils curl dpkg-dev jq python3
+          sudo apt-get install -y apt-utils curl dpkg-dev gnupg jq python3
 
       - name: Download image kernel assets
         run: |

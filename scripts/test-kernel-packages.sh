@@ -93,15 +93,45 @@ FAKE_APT_FTPARCHIVE
 cat >"$fake_bin/gpg" <<'FAKE_GPG'
 #!/usr/bin/env bash
 set -euo pipefail
+
+out=
+prev=
+for arg in "$@"; do
+	if [ "$prev" = "-o" ]; then
+		out="$arg"
+		prev=
+		continue
+	fi
+	prev=
+	if [ "$arg" = "-o" ] || [ "$arg" = "--output" ]; then
+		prev="-o"
+	fi
+done
+if [ -n "$out" ]; then
+	mkdir -p "$(dirname "$out")"
+	printf 'fake gpg output\n' >"$out"
+fi
 exit 0
 FAKE_GPG
 chmod +x "$fake_bin/apt-ftparchive" "$fake_bin/gpg"
 
-PATH="$fake_bin:$PATH" "$repo_root/scripts/publish-apt-repo.sh" "$deb_dir" "$repo_dir"
+if PATH="$fake_bin:$PATH" "$repo_root/scripts/publish-apt-repo.sh" "$deb_dir" "$repo_dir.unsigned" 2>"$tmp_dir/unsigned.err"; then
+	echo "publish-apt-repo.sh should require a signing key by default" >&2
+	exit 1
+fi
+grep -q 'YEET_APT_GPG_PRIVATE_KEY is required' "$tmp_dir/unsigned.err"
+
+PATH="$fake_bin:$PATH" \
+	YEET_APT_GPG_PRIVATE_KEY='fake private key' \
+	YEET_APT_GPG_KEY_ID='fake@example.invalid' \
+	"$repo_root/scripts/publish-apt-repo.sh" "$deb_dir" "$repo_dir"
 test -s "$repo_dir/pool/main/yeet-vm-kernel_7.1.1_amd64.deb"
 test -s "$repo_dir/dists/stable/main/binary-amd64/Packages"
 test -s "$repo_dir/dists/stable/main/binary-amd64/Packages.gz"
 test -s "$repo_dir/dists/stable/Release"
+test -s "$repo_dir/dists/stable/Release.gpg"
+test -s "$repo_dir/dists/stable/InRelease"
+test -s "$repo_dir/yeet-vm-kernel-archive-keyring.gpg"
 
 bash -n \
 	"$repo_root/packages/kernel/deb/usr/lib/yeet-vm-kernel/select-kernel" \

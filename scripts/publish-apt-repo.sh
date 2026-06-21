@@ -35,28 +35,43 @@ install -m 0644 "$deb_dir"/*.deb "$pool_dir/"
 		release "dists/$suite" >"dists/$suite/Release"
 )
 
-if [ -n "${YEET_APT_GPG_PRIVATE_KEY:-}" ]; then
-	if ! command -v gpg >/dev/null 2>&1; then
-		echo "missing required command for signing: gpg" >&2
-		exit 1
+if [ -z "${YEET_APT_GPG_PRIVATE_KEY:-}" ]; then
+	if [ "${YEET_APT_ALLOW_UNSIGNED:-}" = "1" ]; then
+		echo "warning: publishing unsigned apt repository because YEET_APT_ALLOW_UNSIGNED=1" >&2
+		exit 0
 	fi
-	gpg_home="$(mktemp -d)"
-	cleanup_gpg() {
-		rm -rf "$gpg_home"
-	}
-	trap cleanup_gpg EXIT
-	chmod 0700 "$gpg_home"
-	printf '%s\n' "$YEET_APT_GPG_PRIVATE_KEY" | GNUPGHOME="$gpg_home" gpg --batch --import
-	key_args=()
-	if [ -n "${YEET_APT_GPG_KEY_ID:-}" ]; then
-		key_args=(--local-user "$YEET_APT_GPG_KEY_ID")
-	fi
-	GNUPGHOME="$gpg_home" gpg --batch --yes --armor --detach-sign \
-		"${key_args[@]}" \
-		-o "$repo_dir/dists/$suite/Release.gpg" \
-		"$repo_dir/dists/$suite/Release"
-	GNUPGHOME="$gpg_home" gpg --batch --yes --clearsign \
-		"${key_args[@]}" \
-		-o "$repo_dir/dists/$suite/InRelease" \
-		"$repo_dir/dists/$suite/Release"
+	echo "YEET_APT_GPG_PRIVATE_KEY is required to publish the apt repository" >&2
+	echo "set YEET_APT_ALLOW_UNSIGNED=1 only for local tests" >&2
+	exit 1
 fi
+
+if ! command -v gpg >/dev/null 2>&1; then
+	echo "missing required command for signing: gpg" >&2
+	exit 1
+fi
+gpg_home="$(mktemp -d)"
+cleanup_gpg() {
+	rm -rf "$gpg_home"
+}
+trap cleanup_gpg EXIT
+chmod 0700 "$gpg_home"
+printf '%s\n' "$YEET_APT_GPG_PRIVATE_KEY" | GNUPGHOME="$gpg_home" gpg --batch --import
+key_args=()
+export_args=()
+if [ -n "${YEET_APT_GPG_KEY_ID:-}" ]; then
+	key_args=(--local-user "$YEET_APT_GPG_KEY_ID")
+	export_args=("$YEET_APT_GPG_KEY_ID")
+fi
+GNUPGHOME="$gpg_home" gpg --batch --yes \
+	--output "$repo_dir/yeet-vm-kernel-archive-keyring.gpg" \
+	--export "${export_args[@]}"
+GNUPGHOME="$gpg_home" gpg --batch --yes --armor \
+	--output "$repo_dir/dists/$suite/Release.gpg" \
+	--detach-sign \
+	"${key_args[@]}" \
+	"$repo_dir/dists/$suite/Release"
+GNUPGHOME="$gpg_home" gpg --batch --yes \
+	--output "$repo_dir/dists/$suite/InRelease" \
+	--clearsign \
+	"${key_args[@]}" \
+	"$repo_dir/dists/$suite/Release"
