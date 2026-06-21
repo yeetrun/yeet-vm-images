@@ -56,7 +56,7 @@ source_name="$(basename "$source_url")"
 sha256sums_url="${YEET_KERNEL_SHA256SUMS_URL:-$(dirname "$source_url")/sha256sums.asc}"
 source_sha256="$(
 	curl -fsSL --retry 3 "$sha256sums_url" |
-		awk -v source_name="$source_name" '$2 == source_name || $2 == "*" source_name { print $1; exit }'
+		awk -v source_name="$source_name" '($2 == source_name || $2 == "*" source_name) && !found { print $1; found = 1 }'
 )"
 if [ -z "$source_sha256" ]; then
 	echo "could not find checksum for $source_name in $sha256sums_url" >&2
