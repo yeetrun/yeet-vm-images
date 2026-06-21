@@ -71,12 +71,19 @@ NixOS guests can consume the published flake tarball:
 }
 ```
 
-After either guest path installs or rebuilds the selector, run from the host or
-client:
+After either guest path installs or rebuilds the selector, the guest prints the
+matching host-side sync command. The command uses `/etc/yeet-vm/hostname` when
+yeet metadata is available and falls back to a `<service-name>` placeholder
+otherwise:
 
 ```bash
-yeet vm kernel sync <svc> --restart
+yeet vm kernel sync <service-name> --restart
 ```
+
+The guest package or rebuild only selects the desired kernel under
+`/etc/yeet-vm/kernel/selected.json`. Firecracker still boots from a host-side
+kernel path, so the yeet sync command is what copies that selected kernel back
+to catch and restarts the VM on the new kernel.
 
 ## Ubuntu 26.04
 

@@ -42,6 +42,7 @@ deb_version="${version#linux-}"
 deb_version="${deb_version%-yeet}"
 sed "s/@DEB_VERSION@/$deb_version/" packages/kernel/deb/DEBIAN/control.in >"$pkg_root/DEBIAN/control"
 install -m 0755 packages/kernel/deb/usr/lib/yeet-vm-kernel/select-kernel "$pkg_root/usr/lib/yeet-vm-kernel/select-kernel"
+install -m 0755 packages/kernel/deb/usr/lib/yeet-vm-kernel/sync-message "$pkg_root/usr/lib/yeet-vm-kernel/sync-message"
 install -m 0644 "$kernel_dir/vmlinux" "$pkg_root/usr/lib/yeet-vm/kernels/$version/vmlinux"
 install -m 0644 "$kernel_dir/kernel.config" "$pkg_root/usr/lib/yeet-vm/kernels/$version/kernel.config"
 
@@ -49,6 +50,7 @@ cat >"$pkg_root/DEBIAN/postinst" <<POSTINST
 #!/usr/bin/env bash
 set -euo pipefail
 /usr/lib/yeet-vm-kernel/select-kernel "$version"
+/usr/lib/yeet-vm-kernel/sync-message "$version"
 POSTINST
 chmod 0755 "$pkg_root/DEBIAN/postinst"
 

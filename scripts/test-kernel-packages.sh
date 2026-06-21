@@ -51,8 +51,17 @@ grep -q '^Package: yeet-vm-kernel$' "$capture_root/DEBIAN/control"
 grep -q '^Version: 7.1.1$' "$capture_root/DEBIAN/control"
 test -x "$capture_root/DEBIAN/postinst"
 test -x "$capture_root/usr/lib/yeet-vm-kernel/select-kernel"
+test -x "$capture_root/usr/lib/yeet-vm-kernel/sync-message"
+grep -q '/usr/lib/yeet-vm-kernel/sync-message "linux-7.1.1-yeet"' "$capture_root/DEBIAN/postinst"
 cmp "$kernel_dir/vmlinux" "$capture_root/usr/lib/yeet-vm/kernels/linux-7.1.1-yeet/vmlinux"
 cmp "$kernel_dir/kernel.config" "$capture_root/usr/lib/yeet-vm/kernels/linux-7.1.1-yeet/kernel.config"
+message="$(YEET_VM_SERVICE_NAME=tyler-exit-node "$capture_root/usr/lib/yeet-vm-kernel/sync-message" linux-7.1.1-yeet 2>&1)"
+printf '%s\n' "$message" | grep -q 'yeet vm kernel sync tyler-exit-node --restart'
+printf 'tyler-exit-node\n' >"$tmp_dir/hostname"
+message="$(env -u YEET_VM_SERVICE_NAME YEET_VM_HOSTNAME_FILE="$tmp_dir/hostname" "$capture_root/usr/lib/yeet-vm-kernel/sync-message" linux-7.1.1-yeet 2>&1)"
+printf '%s\n' "$message" | grep -q 'yeet vm kernel sync tyler-exit-node --restart'
+message="$(YEET_VM_SERVICE_NAME= YEET_VM_HOSTNAME_FILE="$tmp_dir/missing-hostname" "$capture_root/usr/lib/yeet-vm-kernel/sync-message" linux-7.1.1-yeet 2>&1)"
+printf '%s\n' "$message" | grep -q 'yeet vm kernel sync <service-name> --restart'
 
 cat >"$fake_bin/apt-ftparchive" <<'FAKE_APT_FTPARCHIVE'
 #!/usr/bin/env bash
@@ -92,5 +101,9 @@ test -s "$repo_dir/dists/stable/Release"
 
 bash -n \
 	"$repo_root/packages/kernel/deb/usr/lib/yeet-vm-kernel/select-kernel" \
+	"$repo_root/packages/kernel/deb/usr/lib/yeet-vm-kernel/sync-message" \
 	"$repo_root/scripts/build-kernel-deb.sh" \
 	"$repo_root/scripts/publish-apt-repo.sh"
+
+grep -q 'system.activationScripts.yeet-vm-kernel-sync-message.text' "$repo_root/kernel-packages/flake.nix"
+grep -q 'yeet vm kernel sync' "$repo_root/kernel-packages/flake.nix"
