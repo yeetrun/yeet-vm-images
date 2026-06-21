@@ -109,9 +109,11 @@ assert_probe '.nixPath | map(startswith("nixpkgs=")) | any' "nixos-rebuild must 
 assert_probe '.nixPath | index("nixos-config=/etc/nixos/configuration.nix") == null' "flake-first image must not wire nixos-config to /etc/nixos/configuration.nix"
 assert_probe '.environmentPathsToLink | index("/share/terminfo") != null' "terminfo must be linked into the system profile for Ghostty support"
 assert_probe '.etcTerminfoEnable == false' "/etc/terminfo must not be managed as a symlink because make-ext4-fs materializes it as a directory"
-for package in rclone rsync iptables nftables; do
+for package in rclone rsync iptables nftables curl file iproute2 jq openssh procps wget; do
 	assert_probe ".systemPackages | map(tostring) | any(contains(\"$package\"))" "$package must be installed for yeet/catch guest workflows"
 done
+assert_probe '.systemPackages | map(tostring) | any(test("-git-[0-9]"))' "normal git must be installed for yeet/catch guest workflows"
+assert_probe '.systemPackages | map(tostring) | all(contains("git-minimal") | not)' "NixOS image must use normal git rather than gitMinimal"
 assert_probe '.bootKernelEnable == false' "NixOS image must not include the default NixOS kernel closure because Firecracker boots the yeet-selected external kernel"
 assert_probe '.bootModprobeConfigEnable == true' "NixOS activation expects boot.modprobeConfig for /proc/sys/kernel/modprobe"
 assert_probe '.bootKernelModules == []' "default NixOS hardware module requests must be cleared for the yeet microVM kernel"
@@ -170,25 +172,33 @@ do
 	}
 done
 for system_package in \
+	htop \
+	vim
+do
+	grep -Eq "^[[:space:]]*${system_package}([[:space:]]|$)" "$repo_root/nixos/system.nix" || {
+		echo "NixOS user-visible system.nix must list $system_package" >&2
+		exit 1
+	}
+done
+for internal_package in \
 	rclone \
 	rsync \
 	iptables \
 	nftables \
 	curl \
 	file \
+	git \
 	gitMinimal \
-	htop \
 	iproute2 \
 	jq \
 	openssh \
 	procps \
-	vim \
 	wget
 do
-	grep -Eq "^[[:space:]]*${system_package}([[:space:]]|$)" "$repo_root/nixos/system.nix" || {
-		echo "NixOS user-visible system.nix must list $system_package" >&2
+	if grep -Eq "^[[:space:]]*${internal_package}([[:space:]]|$)" "$repo_root/nixos/system.nix"; then
+		echo "NixOS user-visible system.nix must not list internal yeet package $internal_package" >&2
 		exit 1
-	}
+	fi
 done
 
 override_probe="$(

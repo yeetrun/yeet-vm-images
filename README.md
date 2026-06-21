@@ -226,11 +226,11 @@ The NixOS module:
 - disables Firecracker-inapplicable static `modprobe@...` startup units and
   clears upstream generic hardware module requests because yeet kernels build
   the microVM drivers in and the image does not ship a module tree;
-- keeps yeet-owned boot and readiness tool dependencies in `yeet/vm.nix`, while
-  listing user-visible packages in `/etc/nixos/system.nix`;
-- seeds `/etc/nixos/system.nix` with yeet/catch workflow packages such as
-  `rclone`, `rsync`, `iptables`, and `nftables`, plus starter admin tools such
-  as `curl`, `gitMinimal`, `htop`, `jq`, `vim`, and `wget`;
+- keeps yeet-owned boot, readiness, SSH, sync, network, and package-source
+  tooling in `yeet/vm.nix`, including `rclone`, `rsync`, `iptables`,
+  `nftables`, `curl`, `git`, `jq`, `openssh`, and related base tools;
+- keeps `/etc/nixos/system.nix` as the user-additive layer, seeded only with
+  starter admin tools such as `htop` and `vim`;
 - provides `/dev/net/tun` through tmpfiles for guest-managed tunnel software.
 
 The NixOS image does not preinstall Tailscale or other application services.

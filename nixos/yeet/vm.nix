@@ -118,7 +118,21 @@ in
   };
 
   environment = {
-    systemPackages = [ ghosttyTerminfo ];
+    systemPackages = with pkgs; [
+      curl
+      file
+      git
+      ghosttyTerminfo
+      iproute2
+      iptables
+      jq
+      nftables
+      openssh
+      procps
+      rclone
+      rsync
+      wget
+    ];
     pathsToLink = [ "/share/terminfo" ];
     etc.terminfo.enable = lib.mkForce false;
   };
