@@ -41,6 +41,43 @@ image revision, which allows revving image, rootfs, Firecracker, or guest
 tooling changes without changing kernel. `*-latest` aliases and catalog
 payloads remain stable.
 
+## Guest Kernel Packages
+
+The package source workflow publishes the same yeet-managed kernel artifacts as
+guest-consumable package sources. Package installation is opt-in and writes a
+data-only selector under `/etc/yeet-vm/kernel/selected.json`; it does not change
+the Firecracker boot kernel until catch syncs that selector.
+
+Ubuntu guests can add the apt source and install or upgrade the package:
+
+```bash
+printf 'Types: deb\nURIs: https://yeetrun.github.io/yeet-vm-images/apt\nSuites: stable\nComponents: main\nArchitectures: amd64\nTrusted: yes\n' | sudo tee /etc/apt/sources.list.d/yeet-vm-kernel.sources
+sudo apt update
+sudo apt install yeet-vm-kernel
+```
+
+NixOS guests can consume the published flake tarball:
+
+```nix
+{
+  inputs.yeet-vm-kernel.url = "tarball+https://yeetrun.github.io/yeet-vm-images/yeet-vm-kernel-flake.tar.gz";
+}
+```
+
+```nix
+{
+  imports = [ inputs.yeet-vm-kernel.nixosModules.default ];
+  services.yeetVmKernel.enable = true;
+}
+```
+
+After either guest path installs or rebuilds the selector, run from the host or
+client:
+
+```bash
+yeet vm kernel sync <svc> --restart
+```
+
 ## Ubuntu 26.04
 
 The Ubuntu family is built from the official Ubuntu 26.04 cloud image, boots a

@@ -32,6 +32,7 @@ jobs:
       nixos_build: ${{ steps.plan.outputs.nixos_build }}
       nixos_version: ${{ steps.plan.outputs.nixos_version }}
       nixos_image_revision: ${{ steps.plan.outputs.nixos_image_revision }}
+      package_image_release: ${{ steps.plan.outputs.package_image_release }}
       yeet_ref: ${{ steps.plan.outputs.yeet_ref }}
 
     steps:
@@ -114,6 +115,7 @@ jobs:
 
           ubuntu_current_kernel="$(current_upstream_kernel "$RUNNER_TEMP/ubuntu-latest-manifest.json")"
           nixos_current_kernel="$(current_upstream_kernel "$RUNNER_TEMP/nixos-latest-manifest.json")"
+          ubuntu_current_version="$(jq -r '.version' "$RUNNER_TEMP/ubuntu-latest-manifest.json")"
           ubuntu_build="$(should_build "$ubuntu_current_kernel")"
           nixos_build="$(should_build "$nixos_current_kernel")"
 
@@ -125,6 +127,11 @@ jobs:
           nixos_version="$(jq -r '.version' <<<"$nixos_next")"
           nixos_image_revision="$(jq -r '.image_revision' <<<"$nixos_next")"
 
+          package_image_release="$ubuntu_current_version"
+          if [ "$ubuntu_build" = "true" ]; then
+            package_image_release="$ubuntu_version"
+          fi
+
           {
             echo "ubuntu_build=$ubuntu_build"
             echo "ubuntu_version=$ubuntu_version"
@@ -132,6 +139,7 @@ jobs:
             echo "nixos_build=$nixos_build"
             echo "nixos_version=$nixos_version"
             echo "nixos_image_revision=$nixos_image_revision"
+            echo "package_image_release=$package_image_release"
             echo "yeet_ref=$YEET_REF"
           } >>"$GITHUB_OUTPUT"
 
@@ -146,6 +154,8 @@ jobs:
             echo "| --- | --- | --- | --- | --- |"
             echo "| Ubuntu 26.04 amd64 | \`${ubuntu_current_kernel:-unknown}\` | $(action_label "$ubuntu_build") | \`$ubuntu_version\` | \`$ubuntu_image_revision\` |"
             echo "| NixOS 26.05 amd64 | \`${nixos_current_kernel:-unknown}\` | $(action_label "$nixos_build") | \`$nixos_version\` | \`$nixos_image_revision\` |"
+            echo
+            echo "- Kernel package source image release: \`$package_image_release\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
   build-ubuntu:
@@ -190,4 +200,23 @@ jobs:
       overwrite_release: false
       publish_latest_alias: true
       latest_alias: nixos-26.05-amd64-latest
+    secrets: inherit
+
+  publish-kernel-packages:
+    name: Publish kernel package sources
+    needs:
+      - detect
+      - build-ubuntu
+      - build-nixos
+    if: >-
+      ${{
+        always() &&
+        (needs.detect.outputs.ubuntu_build == 'true' || needs.detect.outputs.nixos_build == 'true') &&
+        (needs.build-ubuntu.result == 'success' || needs.build-ubuntu.result == 'skipped') &&
+        (needs.build-nixos.result == 'success' || needs.build-nixos.result == 'skipped')
+      }}
+    uses: ./.github/workflows/publish-kernel-packages.yml
+    with:
+      kernel_version: ${{ needs.detect.outputs.kernel_version }}
+      image_release: ${{ needs.detect.outputs.package_image_release }}
     secrets: inherit

@@ -1,0 +1,134 @@
+name: Publish kernel package sources
+
+on:
+  workflow_call:
+    inputs:
+      kernel_version:
+        description: Upstream Linux kernel version to package.
+        required: true
+        type: string
+      image_release:
+        description: Immutable image release whose vmlinux and kernel.config assets should be packaged.
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      kernel_version:
+        description: Upstream Linux kernel version to package.
+        required: true
+      image_release:
+        description: Immutable image release whose vmlinux and kernel.config assets should be packaged.
+        required: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  packages:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      KERNEL_VERSION: ${{ inputs.kernel_version }}
+      IMAGE_RELEASE: ${{ inputs.image_release }}
+      YEET_APT_GPG_PRIVATE_KEY: ${{ secrets.YEET_APT_GPG_PRIVATE_KEY }}
+      YEET_APT_GPG_KEY_ID: ${{ secrets.YEET_APT_GPG_KEY_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils curl dpkg-dev jq python3
+
+      - name: Download image kernel assets
+        run: |
+          set -euo pipefail
+
+          asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${IMAGE_RELEASE}"
+          kernel_dir="dist/kernel-package-source"
+          mkdir -p "$kernel_dir"
+          curl -fsSL --retry 3 -o "$kernel_dir/manifest.json" "$asset_base/manifest.json"
+          curl -fsSL --retry 3 -o "$kernel_dir/vmlinux" "$asset_base/vmlinux"
+          curl -fsSL --retry 3 -o "$kernel_dir/kernel.config" "$asset_base/kernel.config"
+
+          manifest_kernel="$(jq -r '.upstream_kernel_version // (.kernel_version | sub("^linux-"; "") | sub("-yeet$"; ""))' "$kernel_dir/manifest.json")"
+          if [ "$manifest_kernel" != "$KERNEL_VERSION" ]; then
+            echo "image release $IMAGE_RELEASE has kernel $manifest_kernel, want $KERNEL_VERSION" >&2
+            exit 1
+          fi
+          vmlinux_sha="$(sha256sum "$kernel_dir/vmlinux" | awk '{ print $1 }')"
+          manifest_vmlinux_sha="$(jq -r '.checksums.vmlinux // empty' "$kernel_dir/manifest.json")"
+          if [ -n "$manifest_vmlinux_sha" ] && [ "$vmlinux_sha" != "$manifest_vmlinux_sha" ]; then
+            echo "vmlinux checksum mismatch: got $vmlinux_sha, want $manifest_vmlinux_sha" >&2
+            exit 1
+          fi
+
+      - name: Build deb and apt repo
+        run: |
+          set -euo pipefail
+          YEET_VM_KERNEL_VERSION="linux-${KERNEL_VERSION}-yeet" \
+            scripts/build-kernel-deb.sh dist/kernel-package-source dist/kernel-packages/deb
+          scripts/publish-apt-repo.sh dist/kernel-packages/deb dist/kernel-packages/site/apt
+
+      - name: Generate Nix package metadata
+        run: |
+          set -euo pipefail
+
+          sri_from_hex() {
+            python3 -c 'import base64, binascii, sys; print("sha256-" + base64.b64encode(binascii.unhexlify(sys.argv[1])).decode())' "$1"
+          }
+
+          vmlinux_sha="$(sha256sum dist/kernel-package-source/vmlinux | awk '{ print $1 }')"
+          kernel_config_sha="$(sha256sum dist/kernel-package-source/kernel.config | awk '{ print $1 }')"
+          asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${IMAGE_RELEASE}"
+
+          cat >kernel-packages/metadata.nix <<NIX
+          {
+            kernelVersion = "$KERNEL_VERSION";
+            vmlinuxUrl = "$asset_base/vmlinux";
+            kernelConfigUrl = "$asset_base/kernel.config";
+            vmlinuxHash = "$(sri_from_hex "$vmlinux_sha")";
+            kernelConfigHash = "$(sri_from_hex "$kernel_config_sha")";
+            vmlinuxSha256Raw = "$vmlinux_sha";
+            kernelConfigSha256Raw = "$kernel_config_sha";
+          }
+          NIX
+
+      - name: Prepare Pages artifact
+        run: |
+          set -euo pipefail
+
+          site="dist/kernel-packages/site"
+          mkdir -p "$site/kernel-packages"
+          cp kernel-packages/flake.nix "$site/kernel-packages/flake.nix"
+          cp kernel-packages/metadata.nix "$site/kernel-packages/metadata.nix"
+          cp kernel-packages/yeet-kernel-package.nix "$site/kernel-packages/yeet-kernel-package.nix"
+          tar -C "$site/kernel-packages" -czf "$site/yeet-vm-kernel-flake.tar.gz" .
+          cat >"$site/index.html" <<HTML
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>yeet VM kernel packages</title>
+          <h1>yeet VM kernel packages</h1>
+          <ul>
+            <li><a href="apt/dists/stable/Release">apt repository</a></li>
+            <li><a href="yeet-vm-kernel-flake.tar.gz">Nix flake tarball</a></li>
+          </ul>
+          HTML
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/kernel-packages/site
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
