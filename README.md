@@ -31,11 +31,9 @@ a new image version only updates the immutable release and the matching
 
 ## Automatic Kernel Refresh
 
-Phase 1 prepares catalog validation and manifest metadata for a future
-`Sync latest stable Linux kernel VM images` workflow. Once that workflow is
-added later in this branch, it will run daily or manually, read kernel.org
-latest stable metadata, compare the Ubuntu and NixOS latest manifests, and only
-build stale families.
+The `Sync latest stable Linux kernel VM images` workflow runs daily and can
+also be manually dispatched. It reads kernel.org latest stable metadata,
+compares the Ubuntu and NixOS latest manifests, and only builds stale families.
 
 Immutable versions use hybrid tags, such as
 `ubuntu-26.04-amd64-kernel-7.1.1-v16`. The final `v<N>` remains the per-family
