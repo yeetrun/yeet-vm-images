@@ -556,16 +556,12 @@ jobs:
 
       - name: Publish release
         run: |
-          gh release create "$VERSION" \
-            "$OUT_DIR/manifest.json" \
-            "$OUT_DIR/vmlinux" \
-            "$OUT_DIR/rootfs.ext4.zst" \
-            "$OUT_DIR/firecracker" \
-            "$OUT_DIR/kernel.config" \
-            "$OUT_DIR/checksums.txt" \
-            --target "$GITHUB_SHA" \
-            --title "$VERSION" \
-            --notes-file "$OUT_DIR/release-notes.md"
+          scripts/publish-github-release-assets.sh \
+            "$VERSION" \
+            "$VERSION" \
+            "$GITHUB_SHA" \
+            "$OUT_DIR/release-notes.md" \
+            "$OUT_DIR"
 
       - name: Publish latest alias
         if: ${{ inputs.publish_latest_alias }}
@@ -576,13 +572,9 @@ jobs:
           elif git ls-remote --exit-code --tags origin "refs/tags/$LATEST_ALIAS" >/dev/null 2>&1; then
             git push origin ":refs/tags/$LATEST_ALIAS"
           fi
-          gh release create "$LATEST_ALIAS" \
-            "$OUT_DIR/manifest.json" \
-            "$OUT_DIR/vmlinux" \
-            "$OUT_DIR/rootfs.ext4.zst" \
-            "$OUT_DIR/firecracker" \
-            "$OUT_DIR/kernel.config" \
-            "$OUT_DIR/checksums.txt" \
-            --target "$GITHUB_SHA" \
-            --title "$LATEST_ALIAS" \
-            --notes-file "$OUT_DIR/release-notes.md"
+          scripts/publish-github-release-assets.sh \
+            "$LATEST_ALIAS" \
+            "$LATEST_ALIAS" \
+            "$GITHUB_SHA" \
+            "$OUT_DIR/release-notes.md" \
+            "$OUT_DIR"
