@@ -11,6 +11,10 @@ out_dir="${1:-dist/$version}"
 work_dir="${YEET_VM_IMAGE_WORK_DIR:-}"
 kernel_path="${YEET_VM_KERNEL_PATH:-}"
 kernel_version_override="${YEET_VM_KERNEL_VERSION:-}"
+upstream_kernel_version="${YEET_VM_UPSTREAM_KERNEL_VERSION:-}"
+kernel_source_url="${YEET_KERNEL_SOURCE_URL:-}"
+kernel_source_sha256="${YEET_KERNEL_SOURCE_SHA256:-}"
+image_revision="${YEET_VM_IMAGE_REVISION:-}"
 guest_init_path="${YEET_VM_INIT_PATH:-}"
 guest_agent_path="${YEET_VM_AGENT_PATH:-}"
 script_source="${BASH_SOURCE[0]}"
@@ -30,6 +34,48 @@ firecracker_arch="${FIRECRACKER_ARCH:-x86_64}"
 firecracker_tgz="firecracker-${firecracker_version}-${firecracker_arch}.tgz"
 firecracker_url="${FIRECRACKER_URL:-https://github.com/firecracker-microvm/firecracker/releases/download/${firecracker_version}/${firecracker_tgz}}"
 zstd_level="${ZSTD_LEVEL:-10}"
+
+image_revision_from_version() {
+	local version="$1"
+	local revision=""
+
+	case "$version" in
+	*-v[0-9]*)
+		revision="${version##*-v}"
+		case "$revision" in
+		"" | *[!0-9]*)
+			return 1
+			;;
+		*)
+			printf '%s\n' "$revision"
+			;;
+		esac
+		;;
+	*-v*)
+		return 1
+		;;
+	esac
+}
+
+manifest_optional_string_line() {
+	local field="$1"
+	local value="$2"
+
+	if [ -n "$value" ]; then
+		printf '  "%s": "%s",' "$field" "$value"
+	fi
+}
+
+if [ -z "$image_revision" ]; then
+	if ! image_revision="$(image_revision_from_version "$version")"; then
+		echo "YEET_VM_IMAGE_VERSION has invalid image revision suffix: $version" >&2
+		exit 1
+	fi
+fi
+if [ -n "$image_revision" ] && ! [[ "$image_revision" =~ ^[0-9]+$ ]]; then
+	echo "YEET_VM_IMAGE_REVISION must be numeric when set: $image_revision" >&2
+	exit 1
+fi
 
 require() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -545,11 +591,15 @@ if [ -n "$initrd_artifact" ]; then
 	initrd_manifest_line='  "initrd": "initrd.img",'
 	initrd_checksum_line='    "initrd.img": "'"$initrd_sha"'",'
 fi
+upstream_kernel_version_manifest_line="$(manifest_optional_string_line "upstream_kernel_version" "$upstream_kernel_version")"
+kernel_source_url_manifest_line="$(manifest_optional_string_line "kernel_source_url" "$kernel_source_url")"
+kernel_source_sha256_manifest_line="$(manifest_optional_string_line "kernel_source_sha256" "$kernel_source_sha256")"
 
 cat >"$out_dir/manifest.json" <<JSON
 {
   "name": "yeet-ubuntu-26.04",
   "version": "$version",
+  "image_revision": ${image_revision:-0},
   "architecture": "x86_64",
   "image_profile": "$profile",
   "kernel_policy": "$kernel_policy",
@@ -564,6 +614,9 @@ $initrd_manifest_line
   "firecracker": "firecracker",
   "rootfs_size": $rootfs_size,
   "kernel_version": "$kernel_version",
+$upstream_kernel_version_manifest_line
+$kernel_source_url_manifest_line
+$kernel_source_sha256_manifest_line
   "ubuntu_kernel_version": "$ubuntu_kernel_version",
   "provenance": {
     "build_time": "$build_time",

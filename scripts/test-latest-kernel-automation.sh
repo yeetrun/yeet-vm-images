@@ -10,6 +10,35 @@ script_dir="$(cd "$script_dir" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 testdata_dir="$repo_root/scripts/testdata"
 
+assert_builder_manifest_field() {
+	builder="$1"
+	field="$2"
+
+	if ! grep -Fq "\"$field\"" "$builder"; then
+		echo "$builder does not include manifest field \"$field\"" >&2
+		exit 1
+	fi
+}
+
+assert_builder_omits_unconditional_optional_manifest_field() {
+	builder="$1"
+	field="$2"
+
+	if grep -Fq "\"$field\": \"\$$field\"" "$builder"; then
+		echo "$builder emits optional manifest field \"$field\" unconditionally" >&2
+		exit 1
+	fi
+}
+
+for builder in "$repo_root/scripts/build-ubuntu-26.04.sh" "$repo_root/scripts/build-nixos-26.05.sh"; do
+	for field in upstream_kernel_version kernel_source_url kernel_source_sha256 image_revision; do
+		assert_builder_manifest_field "$builder" "$field"
+	done
+	for field in upstream_kernel_version kernel_source_url kernel_source_sha256; do
+		assert_builder_omits_unconditional_optional_manifest_field "$builder" "$field"
+	done
+done
+
 expected_manifest_version_pattern='(v[0-9]+|kernel-[0-9]+[.][0-9]+([.][0-9]+)?-v[0-9]+)'
 manifest_version_pattern="$(sed -n "s/^manifest_version_pattern='\(.*\)'$/\1/p" "$repo_root/scripts/verify-catalog.sh")"
 if [ "$manifest_version_pattern" != "$expected_manifest_version_pattern" ]; then
@@ -32,6 +61,101 @@ cleanup() {
 	rm -rf "$tmp_dir"
 }
 trap cleanup EXIT
+
+extract_builder_function() {
+	builder="$1"
+	function_name="$2"
+
+	awk -v function_name="$function_name" '
+		$0 == function_name "() {" { in_function = 1 }
+		in_function { print }
+		in_function && $0 == "}" { found = 1; exit }
+		END { if (!found) exit 1 }
+	' "$builder"
+}
+
+run_builder_function() {
+	builder="$1"
+	function_name="$2"
+	shift 2
+	helper_file="$tmp_dir/$(basename "$builder").$function_name.sh"
+
+	if ! extract_builder_function "$builder" "$function_name" >"$helper_file"; then
+		echo "$builder does not define $function_name" >&2
+		return 1
+	fi
+
+	bash -s -- "$helper_file" "$function_name" "$@" <<'RUN_BUILDER_FUNCTION'
+set -euo pipefail
+helper_file="$1"
+function_name="$2"
+shift 2
+. "$helper_file"
+"$function_name" "$@"
+RUN_BUILDER_FUNCTION
+}
+
+assert_revision_helper_returns() {
+	builder="$1"
+	version="$2"
+	expected="$3"
+
+	if ! output="$(run_builder_function "$builder" image_revision_from_version "$version" 2>&1)"; then
+		echo "$builder image_revision_from_version failed for $version" >&2
+		echo "$output" >&2
+		exit 1
+	fi
+	if [ "$output" != "$expected" ]; then
+		echo "$builder image_revision_from_version expected '$expected' for $version but got '$output'" >&2
+		exit 1
+	fi
+}
+
+assert_revision_helper_fails() {
+	builder="$1"
+	version="$2"
+
+	if output="$(run_builder_function "$builder" image_revision_from_version "$version" 2>&1)"; then
+		echo "$builder image_revision_from_version expected failure for $version but got '$output'" >&2
+		exit 1
+	fi
+}
+
+assert_optional_manifest_line_returns() {
+	builder="$1"
+	field="$2"
+	value="$3"
+	expected="$4"
+
+	if ! output="$(run_builder_function "$builder" manifest_optional_string_line "$field" "$value" 2>&1)"; then
+		echo "$builder manifest_optional_string_line failed for $field" >&2
+		echo "$output" >&2
+		exit 1
+	fi
+	if [ "$output" != "$expected" ]; then
+		echo "$builder manifest_optional_string_line expected '$expected' for $field but got '$output'" >&2
+		exit 1
+	fi
+}
+
+assert_builder_helper_behavior() {
+	builder="$1"
+	family="$2"
+
+	assert_revision_helper_returns "$builder" "$family-kernel-7.1.1-v16" "16"
+	assert_revision_helper_returns "$builder" "$family-kernel-7.1.1" ""
+	assert_revision_helper_fails "$builder" "$family-v16x"
+
+	assert_optional_manifest_line_returns "$builder" "upstream_kernel_version" "" ""
+	assert_optional_manifest_line_returns "$builder" "upstream_kernel_version" "7.1.1" '  "upstream_kernel_version": "7.1.1",'
+	assert_optional_manifest_line_returns "$builder" "kernel_source_url" "" ""
+	assert_optional_manifest_line_returns "$builder" "kernel_source_url" "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.1.tar.xz" '  "kernel_source_url": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.1.tar.xz",'
+	assert_optional_manifest_line_returns "$builder" "kernel_source_sha256" "" ""
+	assert_optional_manifest_line_returns "$builder" "kernel_source_sha256" "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" '  "kernel_source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",'
+}
+
+assert_builder_helper_behavior "$repo_root/scripts/build-ubuntu-26.04.sh" "ubuntu-26.04-amd64"
+assert_builder_helper_behavior "$repo_root/scripts/build-nixos-26.05.sh" "nixos-26.05-amd64"
 
 cat >"$tmp_dir/curl" <<'MOCK_CURL'
 #!/usr/bin/env bash
