@@ -57,6 +57,32 @@ image_revision_from_version() {
 	esac
 }
 
+validate_image_revision() {
+	local version="$1"
+	local revision="$2"
+	local suffix_revision=""
+
+	if ! suffix_revision="$(image_revision_from_version "$version")"; then
+		echo "YEET_VM_IMAGE_VERSION has invalid image revision suffix: $version" >&2
+		return 1
+	fi
+	if [ -n "$revision" ] && ! [[ "$revision" =~ ^[0-9]+$ ]]; then
+		echo "YEET_VM_IMAGE_REVISION must be numeric when set: $revision" >&2
+		return 1
+	fi
+	if [ -n "$revision" ] && [ -n "$suffix_revision" ] && [ "$revision" != "$suffix_revision" ]; then
+		echo "YEET_VM_IMAGE_REVISION $revision does not match version suffix v$suffix_revision in $version" >&2
+		return 1
+	fi
+	if [ -n "$revision" ]; then
+		printf '%s\n' "$revision"
+	elif [ -n "$suffix_revision" ]; then
+		printf '%s\n' "$suffix_revision"
+	else
+		printf '%s\n' "0"
+	fi
+}
+
 manifest_optional_string_line() {
 	local field="$1"
 	local value="$2"
@@ -66,14 +92,7 @@ manifest_optional_string_line() {
 	fi
 }
 
-if [ -z "$image_revision" ]; then
-	if ! image_revision="$(image_revision_from_version "$version")"; then
-		echo "YEET_VM_IMAGE_VERSION has invalid image revision suffix: $version" >&2
-		exit 1
-	fi
-fi
-if [ -n "$image_revision" ] && ! [[ "$image_revision" =~ ^[0-9]+$ ]]; then
-	echo "YEET_VM_IMAGE_REVISION must be numeric when set: $image_revision" >&2
+if ! image_revision="$(validate_image_revision "$version" "$image_revision")"; then
 	exit 1
 fi
 

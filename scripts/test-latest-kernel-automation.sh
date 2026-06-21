@@ -121,6 +121,60 @@ assert_revision_helper_fails() {
 	fi
 }
 
+run_builder_revision_validation() {
+	builder="$1"
+	version="$2"
+	revision="$3"
+	helper_file="$tmp_dir/$(basename "$builder").validate_image_revision.sh"
+
+	: >"$helper_file"
+	if ! extract_builder_function "$builder" image_revision_from_version >>"$helper_file"; then
+		echo "$builder does not define image_revision_from_version" >&2
+		return 1
+	fi
+	if ! extract_builder_function "$builder" validate_image_revision >>"$helper_file"; then
+		echo "$builder does not define validate_image_revision" >&2
+		return 1
+	fi
+
+	bash -s -- "$helper_file" "$version" "$revision" <<'RUN_VALIDATE_REVISION'
+set -euo pipefail
+helper_file="$1"
+version="$2"
+revision="$3"
+. "$helper_file"
+validate_image_revision "$version" "$revision"
+RUN_VALIDATE_REVISION
+}
+
+assert_validate_revision_returns() {
+	builder="$1"
+	version="$2"
+	revision="$3"
+	expected="$4"
+
+	if ! output="$(run_builder_revision_validation "$builder" "$version" "$revision" 2>&1)"; then
+		echo "$builder validate_image_revision failed for $version revision '$revision'" >&2
+		echo "$output" >&2
+		exit 1
+	fi
+	if [ "$output" != "$expected" ]; then
+		echo "$builder validate_image_revision expected '$expected' for $version revision '$revision' but got '$output'" >&2
+		exit 1
+	fi
+}
+
+assert_validate_revision_fails() {
+	builder="$1"
+	version="$2"
+	revision="$3"
+
+	if output="$(run_builder_revision_validation "$builder" "$version" "$revision" 2>&1)"; then
+		echo "$builder validate_image_revision expected failure for $version revision '$revision' but got '$output'" >&2
+		exit 1
+	fi
+}
+
 assert_optional_manifest_line_returns() {
 	builder="$1"
 	field="$2"
@@ -145,6 +199,12 @@ assert_builder_helper_behavior() {
 	assert_revision_helper_returns "$builder" "$family-kernel-7.1.1-v16" "16"
 	assert_revision_helper_returns "$builder" "$family-kernel-7.1.1" ""
 	assert_revision_helper_fails "$builder" "$family-v16x"
+	assert_validate_revision_returns "$builder" "$family-kernel-7.1.1-v16" "" "16"
+	assert_validate_revision_returns "$builder" "$family-kernel-7.1.1-v16" "16" "16"
+	assert_validate_revision_returns "$builder" "$family-kernel-7.1.1" "0" "0"
+	assert_validate_revision_fails "$builder" "$family-kernel-7.1.1-v16x" "0"
+	assert_validate_revision_fails "$builder" "$family-kernel-7.1.1-v16" "17"
+	assert_validate_revision_fails "$builder" "$family-kernel-7.1.1-v16" "abc"
 
 	assert_optional_manifest_line_returns "$builder" "upstream_kernel_version" "" ""
 	assert_optional_manifest_line_returns "$builder" "upstream_kernel_version" "7.1.1" '  "upstream_kernel_version": "7.1.1",'
@@ -263,10 +323,13 @@ valid_kernel_sha="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd
 run_catalog_provenance_case "legacy versions" "" "pass" "legacy"
 run_catalog_provenance_case "legacy version with valid upstream_kernel_version" ", \"upstream_kernel_version\": \"7.1.2\"" "pass" "legacy"
 run_catalog_provenance_case "absent fields" "" "pass"
-run_catalog_provenance_case "valid fields" ", \"upstream_kernel_version\": \"7.1.1\", \"kernel_source_sha256\": \"$valid_kernel_sha\"" "pass"
+run_catalog_provenance_case "valid fields" ", \"upstream_kernel_version\": \"7.1.1\", \"kernel_source_url\": \"https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.1.tar.xz\", \"kernel_source_sha256\": \"$valid_kernel_sha\"" "pass"
 run_catalog_provenance_case "hybrid version with mismatched upstream_kernel_version" ", \"upstream_kernel_version\": \"7.1.2\"" "fail"
 run_catalog_provenance_case "present-null upstream_kernel_version" ", \"upstream_kernel_version\": null" "fail"
 run_catalog_provenance_case "malformed upstream_kernel_version" ", \"upstream_kernel_version\": \"7.x\"" "fail"
+run_catalog_provenance_case "present-null kernel_source_url" ", \"kernel_source_url\": null" "fail"
+run_catalog_provenance_case "malformed kernel_source_url" ", \"kernel_source_url\": \"not-a-url\"" "fail"
+run_catalog_provenance_case "mismatched kernel_source_url" ", \"upstream_kernel_version\": \"7.1.1\", \"kernel_source_url\": \"https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.2.tar.xz\"" "fail"
 run_catalog_provenance_case "malformed kernel_source_sha256" ", \"kernel_source_sha256\": \"not-a-sha256\"" "fail"
 run_catalog_provenance_case "present-null kernel_source_sha256" ", \"kernel_source_sha256\": null" "fail"
 

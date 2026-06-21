@@ -214,13 +214,19 @@ assets.
 
 Inputs:
 
-- `version`: release and image version matching `ubuntu-26.04-amd64-v<N>`
+- `version`: release and image version, usually
+  `ubuntu-26.04-amd64-kernel-<kernel>-v<N>`; legacy
+  `ubuntu-26.04-amd64-v<N>` releases remain valid
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init` and
   `guest/yeet-agent`
 - `ubuntu_cloud_base_url`: Ubuntu cloud image directory URL
 - `ubuntu_cloud_image`: Ubuntu cloud image tarball name
 - `firecracker_version`: Firecracker release version
 - `kernel_version`: Linux kernel version to build
+- `upstream_kernel_version`: official upstream Linux kernel version recorded in
+  the manifest
+- `image_revision`: numeric per-family image revision; it must match the final
+  `v<N>` suffix when the version includes one
 - `kernel_source_url`: Linux kernel source tarball URL
 - `kernel_source_sha256`: Linux kernel source tarball SHA-256
 - `kernel_config_url`: Firecracker guest kernel config URL used as the build
@@ -249,10 +255,16 @@ also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
-- `version`: release and image version matching `nixos-26.05-amd64-v<N>`
+- `version`: release and image version, usually
+  `nixos-26.05-amd64-kernel-<kernel>-v<N>`; legacy
+  `nixos-26.05-amd64-v<N>` releases remain valid
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init` and
   `guest/yeet-agent`
 - `kernel_version`: Linux kernel version to build
+- `upstream_kernel_version`: official upstream Linux kernel version recorded in
+  the manifest
+- `image_revision`: numeric per-family image revision; it must match the final
+  `v<N>` suffix when the version includes one
 - `kernel_source_url`: Linux kernel source tarball URL
 - `kernel_source_sha256`: Linux kernel source tarball SHA-256
 - `kernel_config_url`: Firecracker guest kernel config URL used as the build
@@ -263,6 +275,7 @@ Inputs:
   before publishing
 - `publish_latest_alias`: update the stable NixOS latest alias after publishing
   the immutable version release
+- `latest_alias`: release/tag name for the catch-facing latest alias
 
 The workflow validates the NixOS microVM profile, checks `checksums.txt`,
 checks the required kernel config values, verifies NixOS system links, confirms

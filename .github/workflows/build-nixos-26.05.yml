@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: Release/image version to publish, for example nixos-26.05-amd64-v14.
+        description: Release/image version to publish, for example nixos-26.05-amd64-kernel-7.1.1-v15.
         required: true
         type: string
       yeet_ref:
@@ -28,7 +28,7 @@ on:
         type: string
         default: "7.0"
       image_revision:
-        description: Numeric per-family image revision.
+        description: Numeric per-family image revision; must match the final v<N> suffix when present.
         required: false
         type: string
         default: "0"
@@ -70,7 +70,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Release/image version to publish, for example nixos-26.05-amd64-v14.
+        description: Release/image version to publish, for example nixos-26.05-amd64-kernel-7.1.1-v15.
         required: true
       yeet_ref:
         description: yeet repository ref used to build guest/yeet-init and guest/yeet-agent.
@@ -89,7 +89,7 @@ on:
         required: true
         default: "7.0"
       image_revision:
-        description: Numeric per-family image revision.
+        description: Numeric per-family image revision; must match the final v<N> suffix when present.
         required: true
         default: "0"
       kernel_source_url:

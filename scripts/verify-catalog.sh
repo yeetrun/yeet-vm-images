@@ -86,12 +86,20 @@ jq -c '.images[]' "$catalog" | while IFS= read -r image; do
 	jq -e '
 	  def hybrid_kernel_from_version:
 	    ((.version | capture("-kernel-(?<kernel>[0-9]+[.][0-9]+([.][0-9]+)?)-v[0-9]+$").kernel) // "");
+	  def expected_kernel_source_url:
+	    (hybrid_kernel_from_version) as $kernel |
+	    ($kernel | split(".")[0]) as $major |
+	    "https://cdn.kernel.org/pub/linux/kernel/v\($major).x/linux-\($kernel).tar.xz";
 	  (.guest_init == "/usr/local/lib/yeet-vm/yeet-init") and
 	  (.guest_agent == "/usr/local/lib/yeet-vm/yeet-agent") and
 	  (.guest_agent_sha256 | test("^[0-9a-f]{64}$")) and
 	  ((has("upstream_kernel_version") | not) or (
 	    (.upstream_kernel_version | type == "string" and test("^[0-9]+[.][0-9]+([.][0-9]+)?$")) and
 	    ((hybrid_kernel_from_version == "") or (.upstream_kernel_version == hybrid_kernel_from_version))
+	  )) and
+	  ((has("kernel_source_url") | not) or (
+	    (.kernel_source_url | type == "string" and test("^https://cdn[.]kernel[.]org/pub/linux/kernel/v[0-9]+[.]x/linux-[0-9]+[.][0-9]+([.][0-9]+)?[.]tar[.]xz$")) and
+	    ((hybrid_kernel_from_version == "") or (.kernel_source_url == expected_kernel_source_url))
 	  )) and
 	  ((has("kernel_source_sha256") | not) or (.kernel_source_sha256 | type == "string" and test("^[0-9a-f]{64}$"))) and
 	  (.checksums | type == "object")
