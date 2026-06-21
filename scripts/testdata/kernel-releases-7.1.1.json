@@ -1,0 +1,25 @@
+{
+  "latest_stable": {
+    "version": "7.1.1"
+  },
+  "releases": [
+    {
+      "moniker": "mainline",
+      "version": "7.1",
+      "source": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.tar.xz",
+      "released": {
+        "isodate": "2026-06-12"
+      },
+      "iseol": false
+    },
+    {
+      "moniker": "stable",
+      "version": "7.1.1",
+      "source": "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.1.tar.xz",
+      "released": {
+        "isodate": "2026-06-19"
+      },
+      "iseol": false
+    }
+  ]
+}
