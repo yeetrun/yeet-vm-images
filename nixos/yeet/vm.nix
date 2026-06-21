@@ -118,25 +118,7 @@ in
   };
 
   environment = {
-    systemPackages = with pkgs; [
-      bashInteractive
-      coreutils
-      curl
-      file
-      gitMinimal
-      htop
-      iproute2
-      iptables
-      jq
-      nftables
-      openssh
-      procps
-      rsync
-      sudo
-      vim
-      wget
-      ghosttyTerminfo
-    ];
+    systemPackages = [ ghosttyTerminfo ];
     pathsToLink = [ "/share/terminfo" ];
     etc.terminfo.enable = lib.mkForce false;
   };
@@ -192,13 +174,35 @@ in
           "systemd-networkd.service"
         ];
         unitConfig.DefaultDependencies = false;
-        path = [ pkgs.nettools ];
+        path = [
+          pkgs.coreutils
+          pkgs.gnugrep
+          pkgs.gnused
+          pkgs.nettools
+        ];
         script = ''
-          if [ -r /etc/yeet-vm/hostname ]; then
-            name="$(head -n1 /etc/yeet-vm/hostname | tr -d '[:space:]')"
-            if [ -n "$name" ]; then
-              hostname "$name"
+          system_nix=/etc/nixos/system.nix
+          metadata_hostname=/etc/yeet-vm/hostname
+          name=
+
+          if [ -r "$system_nix" ] && grep -Eq '^[[:space:]]*networking\.hostName[[:space:]]*=' "$system_nix"; then
+            name="$(sed -n 's/^[[:space:]]*networking\.hostName[[:space:]]*=[[:space:]]*"\([^"]*\)"[[:space:]]*;.*$/\1/p' "$system_nix" | tail -n1)"
+            if [ -z "$name" ]; then
+              exit 0
             fi
+          fi
+
+          if [ -z "$name" ] || [ "$name" = "yeet-vm" ]; then
+            if [ -r "$metadata_hostname" ]; then
+              metadata_name="$(head -n1 "$metadata_hostname" | tr -d '[:space:]')"
+              if [ -n "$metadata_name" ]; then
+                name="$metadata_name"
+              fi
+            fi
+          fi
+
+          if [ -n "$name" ]; then
+            hostname "$name"
           fi
         '';
         serviceConfig.Type = "oneshot";
@@ -212,6 +216,7 @@ in
           "systemd-networkd.service"
         ];
         unitConfig.DefaultDependencies = false;
+        path = [ pkgs.coreutils ];
         script = ''
           mkdir -p /run/systemd/network
           for network in /etc/yeet-vm/systemd-network/*.network; do

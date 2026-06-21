@@ -80,6 +80,7 @@ in {
   modprobeEnabled = modprobeEnabled;
   sshKeysCommand = cfg.services.openssh.authorizedKeysCommand;
   sshAuthorizedKeysFiles = cfg.services.openssh.authorizedKeysFiles;
+  hostnameMetadataScript = cfg.systemd.services.yeet-metadata-hostname.script;
   networkdMetadataScript = cfg.systemd.services.yeet-networkd-metadata.script;
   growRootScript = cfg.systemd.services.yeet-grow-root.script;
   growRootBefore = cfg.systemd.services.yeet-grow-root.before;
@@ -108,13 +109,17 @@ assert_probe '.nixPath | map(startswith("nixpkgs=")) | any' "nixos-rebuild must 
 assert_probe '.nixPath | index("nixos-config=/etc/nixos/configuration.nix") == null' "flake-first image must not wire nixos-config to /etc/nixos/configuration.nix"
 assert_probe '.environmentPathsToLink | index("/share/terminfo") != null' "terminfo must be linked into the system profile for Ghostty support"
 assert_probe '.etcTerminfoEnable == false' "/etc/terminfo must not be managed as a symlink because make-ext4-fs materializes it as a directory"
-assert_probe '.systemPackages | map(tostring) | any(contains("rsync"))' "rsync must be installed for yeet VM copy"
+for package in rclone rsync iptables nftables; do
+	assert_probe ".systemPackages | map(tostring) | any(contains(\"$package\"))" "$package must be installed for yeet/catch guest workflows"
+done
 assert_probe '.bootKernelEnable == false' "NixOS image must not include the default NixOS kernel closure because Firecracker boots the yeet-selected external kernel"
 assert_probe '.bootModprobeConfigEnable == true' "NixOS activation expects boot.modprobeConfig for /proc/sys/kernel/modprobe"
 assert_probe '.bootKernelModules == []' "default NixOS hardware module requests must be cleared for the yeet microVM kernel"
 assert_probe '.modprobeEnabled["modprobe@configfs"] == false and .modprobeEnabled["modprobe@drm"] == false and .modprobeEnabled["modprobe@efi_pstore"] == false and .modprobeEnabled["modprobe@fuse"] == false' "modprobe@ units must be disabled by default in the yeet microVM profile"
 assert_probe '.sshKeysCommand == "none"' "unexpected NixOS AuthorizedKeysCommand"
 assert_probe '.sshAuthorizedKeysFiles | index("/etc/yeet-vm/authorized_keys.d/%u") != null' "NixOS SSH keys must include yeet metadata keys"
+assert_probe '.hostnameMetadataScript | contains("system_nix=/etc/nixos/system.nix") and contains("grep -Eq") and contains("sed -n")' "yeet-metadata-hostname must respect the user-owned NixOS hostname"
+assert_probe '.hostnameMetadataScript | contains("/etc/yeet-vm/hostname")' "yeet-metadata-hostname must keep metadata hostname fallback for unseeded images"
 assert_probe '.networkdMetadataScript | contains("compgen") | not' "yeet-networkd-metadata must not depend on Bash-only compgen"
 assert_probe '.growRootScript | contains("resize2fs \"$root_source\"")' "yeet-grow-root must resize the root source"
 assert_probe '.growRootBefore | index("yeet-guest-ready.service") != null' "yeet-grow-root must run before yeet guest readiness"
@@ -161,6 +166,27 @@ for flake_content in \
 do
 	grep -Fq "$flake_content" "$repo_root/nixos/flake.nix" || {
 		echo "NixOS guest flake must contain $flake_content" >&2
+		exit 1
+	}
+done
+for system_package in \
+	rclone \
+	rsync \
+	iptables \
+	nftables \
+	curl \
+	file \
+	gitMinimal \
+	htop \
+	iproute2 \
+	jq \
+	openssh \
+	procps \
+	vim \
+	wget
+do
+	grep -Eq "^[[:space:]]*${system_package}([[:space:]]|$)" "$repo_root/nixos/system.nix" || {
+		echo "NixOS user-visible system.nix must list $system_package" >&2
 		exit 1
 	}
 done

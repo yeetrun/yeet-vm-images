@@ -214,7 +214,9 @@ The NixOS module:
   reboot boundary;
 - uses systemd-networkd and copies yeet-provided network snippets from
   `/etc/yeet-vm/systemd-network` into `/run/systemd/network` at boot;
-- reads the VM hostname from `/etc/yeet-vm/hostname`;
+- uses `/etc/nixos/system.nix` as the durable VM hostname source after yeet
+  seeds it during provisioning, falling back to `/etc/yeet-vm/hostname` for
+  unseeded images;
 - reads SSH authorized keys from `/etc/yeet-vm/authorized_keys.d/%u` through
   the NixOS OpenSSH `authorizedKeysFiles` option;
 - grows the ext4 root filesystem at boot before yeet reports guest readiness,
@@ -224,9 +226,11 @@ The NixOS module:
 - disables Firecracker-inapplicable static `modprobe@...` startup units and
   clears upstream generic hardware module requests because yeet kernels build
   the microVM drivers in and the image does not ship a module tree;
-- installs practical base tools, nftables/iptables userspace, rsync for
-  `yeet copy` guest file sync, Ghostty terminfo, and Nix flakes support through
-  the normal system profile;
+- keeps yeet-owned boot and readiness tool dependencies in `yeet/vm.nix`, while
+  listing user-visible packages in `/etc/nixos/system.nix`;
+- seeds `/etc/nixos/system.nix` with yeet/catch workflow packages such as
+  `rclone`, `rsync`, `iptables`, and `nftables`, plus starter admin tools such
+  as `curl`, `gitMinimal`, `htop`, `jq`, `vim`, and `wget`;
 - provides `/dev/net/tun` through tmpfiles for guest-managed tunnel software.
 
 The NixOS image does not preinstall Tailscale or other application services.
