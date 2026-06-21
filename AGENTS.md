@@ -31,7 +31,8 @@ This repository builds and publishes official yeet VM image bundles.
 ## NixOS Compatibility
 
 - Build NixOS images the NixOS way: flake-pinned nixpkgs, NixOS modules, and a
-  valid `/etc/nixos/configuration.nix`.
+  valid flake-first `/etc/nixos` containing `flake.nix`, `flake.lock`,
+  `system.nix`, and `yeet/vm.nix`.
 - Do not patch package-owned files in the rootfs to configure behavior. Express
   boot, networking, users, SSH, packages, and service defaults in the NixOS
   module so users can inspect and rebuild them normally.
@@ -39,7 +40,7 @@ This repository builds and publishes official yeet VM image bundles.
   SSH keys, and networkd snippets there, but NixOS services should decide how
   to consume them.
 - Preserve `nixos-rebuild` compatibility. The shipped configuration should be a
-  reasonable base users can extend rather than a hidden appliance image.
+  reasonable flake users can extend rather than a hidden appliance image.
 - Avoid preinstalling long-running application services unless they are part of
   the base VM contract. Users should enable software such as Tailscale through
   normal NixOS configuration.

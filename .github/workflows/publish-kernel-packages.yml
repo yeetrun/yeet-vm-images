@@ -11,6 +11,10 @@ on:
         description: Immutable image release whose vmlinux and kernel.config assets should be packaged.
         required: true
         type: string
+    outputs:
+      metadata_commit:
+        description: Commit SHA containing the published kernel package metadata.
+        value: ${{ jobs.packages.outputs.metadata_commit }}
   workflow_dispatch:
     inputs:
       kernel_version:
@@ -20,14 +24,20 @@ on:
         description: Immutable image release whose vmlinux and kernel.config assets should be packaged.
         required: true
 
+concurrency:
+  group: publish-kernel-packages-main
+  cancel-in-progress: false
+
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 jobs:
   packages:
     runs-on: ubuntu-24.04
+    outputs:
+      metadata_commit: ${{ steps.metadata_commit.outputs.metadata_commit }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -40,6 +50,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Validate publish ref
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "kernel package publishing must run from refs/heads/main, got $GITHUB_REF" >&2
+            exit 1
+          fi
+          git fetch origin main
+          git checkout -B main origin/main
 
       - name: Install dependencies
         run: |
@@ -99,6 +121,32 @@ jobs:
             kernelConfigSha256Raw = "$kernel_config_sha";
           }
           NIX
+
+      - name: Commit Nix package metadata
+        id: metadata_commit
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- kernel-packages/metadata.nix; then
+            echo "kernel-packages/metadata.nix is unchanged"
+            echo "metadata_commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          expected_base="$(git rev-parse HEAD)"
+          git fetch origin main
+          remote_base="$(git rev-parse origin/main)"
+          if [ "$expected_base" != "$remote_base" ]; then
+            echo "origin/main advanced while publishing kernel metadata; re-run the workflow" >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add kernel-packages/metadata.nix
+          git commit -m "packages: update yeet VM kernel metadata for ${KERNEL_VERSION}"
+          git push --force-with-lease=refs/heads/main:"$remote_base" origin HEAD:main
+          echo "metadata_commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
 
       - name: Prepare Pages artifact
         run: |

@@ -67,6 +67,11 @@ on:
         required: false
         type: string
         default: nixos-26.05-amd64-latest
+      yeet_vm_images_ref:
+        description: yeet-vm-images ref used for the shipped guest flake lock.
+        required: false
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       version:
@@ -122,6 +127,10 @@ on:
         description: Release/tag name for the catch-facing latest alias.
         required: true
         default: nixos-26.05-amd64-latest
+      yeet_vm_images_ref:
+        description: yeet-vm-images ref used for the shipped guest flake lock.
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -148,6 +157,7 @@ jobs:
       YEET_VM_UPSTREAM_KERNEL_VERSION: ${{ inputs.upstream_kernel_version }}
       YEET_VM_IMAGE_REVISION: ${{ inputs.image_revision }}
       YEET_VM_IMAGE_WORK_DIR: ${{ github.workspace }}/.build-work
+      YEET_VM_IMAGES_REF: ${{ inputs.yeet_vm_images_ref }}
       YEET_SOURCE_PATH: ${{ github.workspace }}/yeet-src
       GH_TOKEN: ${{ github.token }}
       NIX_CONFIG: |
@@ -202,6 +212,9 @@ jobs:
 
       - name: Build image bundle
         run: |
+          if [ -z "${YEET_VM_IMAGES_REF:-}" ]; then
+            export YEET_VM_IMAGES_REF="${GITHUB_SHA}"
+          fi
           YEET_VM_KERNEL_PATH="$GITHUB_WORKSPACE/$KERNEL_OUT_DIR/vmlinux" \
             YEET_VM_KERNEL_VERSION="linux-${YEET_KERNEL_VERSION}-yeet" \
             scripts/build-nixos-26.05.sh "$OUT_DIR"
@@ -353,6 +366,13 @@ jobs:
               exit 1
             fi
           }
+          assert_path_absent() {
+            local path="$1"
+            if debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" >/dev/null 2>&1; then
+              echo "expected $path to be absent" >&2
+              exit 1
+            fi
+          }
           assert_symlink_target() {
             local path="$1"
             local target="$2"
@@ -363,13 +383,65 @@ jobs:
               exit 1
             fi
           }
-          assert_path_exists /etc/nixos/configuration.nix
-          assert_path_exists /etc/nixos/yeet-vm.nix
-          assert_path_exists /etc/nixos/assets/xterm-ghostty.terminfo
+          assert_path_exists /etc/nixos/README.md
+          assert_path_exists /etc/nixos/flake.nix
+          assert_path_exists /etc/nixos/flake.lock
+          assert_path_exists /etc/nixos/system.nix
+          assert_path_exists /etc/nixos/yeet/vm.nix
+          assert_path_exists /etc/nixos/yeet/assets/xterm-ghostty.terminfo
+          assert_path_absent /etc/nixos/configuration.nix
+          assert_path_absent /etc/nixos/yeet-vm.nix
+          assert_path_absent /etc/nixos/assets/xterm-ghostty.terminfo
+          assert_path_exists /etc/yeet-vm/kernel/selected.json
           assert_path_exists /etc/yeet-vm/systemd-network
           assert_path_exists /nix/var/nix/profiles/system-1-link
           assert_symlink_target /nix/var/nix/profiles/system system-1-link
           assert_symlink_target /run/current-system /nix/var/nix/profiles/system
+          debugfs -R "cat /etc/nixos/flake.lock" "$RUNNER_TEMP/rootfs.ext4" >"$RUNNER_TEMP/guest-flake.lock" 2>/dev/null
+          locked_kernel_ref="$(jq -r '.nodes."yeet-vm-kernel".locked.rev // empty' "$RUNNER_TEMP/guest-flake.lock")"
+          expected_kernel_ref="${YEET_VM_IMAGES_REF:-$GITHUB_SHA}"
+          if [ "$locked_kernel_ref" != "$expected_kernel_ref" ]; then
+            echo "guest flake lock yeet-vm-kernel ref mismatch: locked=$locked_kernel_ref expected=$expected_kernel_ref" >&2
+            exit 1
+          fi
+          metadata_url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${locked_kernel_ref}/kernel-packages/metadata.nix"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/locked-kernel-metadata.nix" "$metadata_url"
+          metadata_kernel_version="$(sed -n 's/^[[:space:]]*kernelVersion = "\(.*\)";$/\1/p' "$RUNNER_TEMP/locked-kernel-metadata.nix")"
+          metadata_vmlinux_sha="$(sed -n 's/^[[:space:]]*vmlinuxSha256Raw = "\(.*\)";$/\1/p' "$RUNNER_TEMP/locked-kernel-metadata.nix")"
+          metadata_kernel_config_sha="$(sed -n 's/^[[:space:]]*kernelConfigSha256Raw = "\(.*\)";$/\1/p' "$RUNNER_TEMP/locked-kernel-metadata.nix")"
+          expected_metadata_kernel="${YEET_KERNEL_VERSION}"
+          if [ "$metadata_kernel_version" != "$expected_metadata_kernel" ]; then
+            echo "locked kernel metadata version mismatch: metadata=$metadata_kernel_version expected=$expected_metadata_kernel" >&2
+            exit 1
+          fi
+          debugfs -R "cat /etc/yeet-vm/kernel/selected.json" "$RUNNER_TEMP/rootfs.ext4" >"$RUNNER_TEMP/selected-kernel.json" 2>/dev/null
+          selected_kernel_version="$(jq -r '.version' "$RUNNER_TEMP/selected-kernel.json")"
+          manifest_kernel_version="$(jq -r '.kernel_version' "$OUT_DIR/manifest.json")"
+          if [ "$selected_kernel_version" != "$manifest_kernel_version" ]; then
+            echo "selected kernel version mismatch: selected=$selected_kernel_version manifest=$manifest_kernel_version" >&2
+            jq . "$RUNNER_TEMP/selected-kernel.json" >&2
+            exit 1
+          fi
+          selected_vmlinux_sha="$(jq -r '.sha256.vmlinux' "$RUNNER_TEMP/selected-kernel.json")"
+          actual_vmlinux_sha="$(sha256sum "$OUT_DIR/vmlinux" | awk '{ print $1 }')"
+          if [ "$selected_vmlinux_sha" != "$actual_vmlinux_sha" ]; then
+            echo "selected vmlinux checksum mismatch: selected=$selected_vmlinux_sha actual=$actual_vmlinux_sha" >&2
+            exit 1
+          fi
+          if [ "$metadata_vmlinux_sha" != "$actual_vmlinux_sha" ]; then
+            echo "locked kernel metadata vmlinux checksum mismatch: metadata=$metadata_vmlinux_sha actual=$actual_vmlinux_sha" >&2
+            exit 1
+          fi
+          selected_kernel_config_sha="$(jq -r '.sha256["kernel.config"]' "$RUNNER_TEMP/selected-kernel.json")"
+          actual_kernel_config_sha="$(sha256sum "$OUT_DIR/kernel.config" | awk '{ print $1 }')"
+          if [ "$selected_kernel_config_sha" != "$actual_kernel_config_sha" ]; then
+            echo "selected kernel.config checksum mismatch: selected=$selected_kernel_config_sha actual=$actual_kernel_config_sha" >&2
+            exit 1
+          fi
+          if [ "$metadata_kernel_config_sha" != "$actual_kernel_config_sha" ]; then
+            echo "locked kernel metadata kernel.config checksum mismatch: metadata=$metadata_kernel_config_sha actual=$actual_kernel_config_sha" >&2
+            exit 1
+          fi
           yeet_vm_dump="$RUNNER_TEMP/yeet-vm-rdump"
           rm -rf "$yeet_vm_dump"
           mkdir -p "$yeet_vm_dump"
@@ -420,7 +492,7 @@ jobs:
           - Nixpkgs: \`nixos-26.05\` (\`$nixpkgs_rev\`)
           - Metadata driver: \`nixos\`
           - Guest tools: \`yeet-init\` and \`yeet-agent\`
-          - Nix: flakes and plain \`sudo nixos-rebuild switch\` are supported out of the box
+          - Nix: rebuild with \`sudo nixos-rebuild switch --flake /etc/nixos#yeet-vm\`
           - Firecracker: \`$firecracker_version\`
 
           See \`manifest.json\` for full checksums and provenance.

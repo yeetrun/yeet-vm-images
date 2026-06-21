@@ -58,11 +58,11 @@ sudo apt update
 sudo apt install yeet-vm-kernel
 ```
 
-NixOS guests can consume the published flake tarball:
+NixOS guests use the yeet kernel package flake from this repository:
 
 ```nix
 {
-  inputs.yeet-vm-kernel.url = "tarball+https://yeetrun.github.io/yeet-vm-images/yeet-vm-kernel-flake.tar.gz";
+  inputs.yeet-vm-kernel.url = "github:yeetrun/yeet-vm-images?dir=kernel-packages";
 }
 ```
 
@@ -73,9 +73,13 @@ NixOS guests can consume the published flake tarball:
 }
 ```
 
-After either guest path installs or rebuilds the selector, reboot the guest:
+Fresh yeet NixOS images already enable that module through their shipped flake.
+To update the selected kernel inside a NixOS guest:
 
 ```bash
+cd /etc/nixos
+sudo nix flake update
+sudo nixos-rebuild switch --flake .#yeet-vm
 sudo reboot
 ```
 
@@ -199,9 +203,15 @@ NixOS image metadata:
 
 The NixOS module:
 
-- keeps `/etc/nixos/configuration.nix` and `/etc/nixos/yeet-vm.nix` in the
-  guest and wires `nixos-config` into `NIX_PATH` so users can inspect and
-  rebuild the system normally with `sudo nixos-rebuild switch`;
+- keeps `/etc/nixos/flake.nix`, `/etc/nixos/flake.lock`,
+  `/etc/nixos/system.nix`, and `/etc/nixos/yeet/vm.nix` in the guest so users
+  can inspect and rebuild the system normally with
+  `sudo nixos-rebuild switch --flake /etc/nixos#yeet-vm` or, from
+  `/etc/nixos`, `sudo nixos-rebuild switch --flake .#yeet-vm`;
+- enables the yeet VM kernel selector by default through
+  `services.yeetVmKernel.enable = true`, writing
+  `/etc/yeet-vm/kernel/selected.json` for catch to sync at the next guest
+  reboot boundary;
 - uses systemd-networkd and copies yeet-provided network snippets from
   `/etc/yeet-vm/systemd-network` into `/run/systemd/network` at boot;
 - reads the VM hostname from `/etc/yeet-vm/hostname`;

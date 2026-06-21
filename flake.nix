@@ -7,11 +7,21 @@
       url = "github:yeetrun/yeet/main";
       flake = false;
     };
+    yeet-vm-kernel = {
+      url = "path:./kernel-packages";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixos-guest-config = {
+      url = "path:./nixos";
+      flake = false;
+    };
   };
 
   outputs =
     { nixpkgs
     , yeet
+    , yeet-vm-kernel
+    , nixos-guest-config
     , ...
     }:
     let
@@ -38,8 +48,11 @@
       nixosSystem = nixpkgs.lib.nixosSystem {
         inherit system;
         modules = [
-          ./nixos/yeet-vm.nix
+          ./nixos/yeet/vm.nix
+          yeet-vm-kernel.nixosModules.default
+          ./nixos/system.nix
           {
+            services.yeetVmKernel.enable = true;
             system.nixos.label = "26.05-yeet";
           }
         ];
@@ -63,7 +76,7 @@
         volumeLabel = "nixos";
         populateImageCommands = ''
           mkdir -p \
-            ./files/etc/nixos/assets \
+            ./files/etc/nixos/yeet/assets \
             ./files/etc/yeet-vm/systemd-network \
             ./files/nix/var/nix/gcroots \
             ./files/nix/var/nix/profiles \
@@ -78,9 +91,12 @@
           ln -s ${yeetInit}/bin/yeet-init ./files/usr/local/lib/yeet-vm/yeet-init
           ln -s ${yeetAgent}/bin/yeet-agent ./files/usr/local/lib/yeet-vm/yeet-agent
 
-          cp ${./nixos/configuration.nix} ./files/etc/nixos/configuration.nix
-          cp ${./nixos/yeet-vm.nix} ./files/etc/nixos/yeet-vm.nix
-          cp ${./nixos/assets/xterm-ghostty.terminfo} ./files/etc/nixos/assets/xterm-ghostty.terminfo
+          cp ${nixos-guest-config}/README.md ./files/etc/nixos/README.md
+          cp ${nixos-guest-config}/flake.nix ./files/etc/nixos/flake.nix
+          cp ${nixos-guest-config}/flake.lock ./files/etc/nixos/flake.lock
+          cp ${nixos-guest-config}/system.nix ./files/etc/nixos/system.nix
+          cp ${nixos-guest-config}/yeet/vm.nix ./files/etc/nixos/yeet/vm.nix
+          cp ${nixos-guest-config}/yeet/assets/xterm-ghostty.terminfo ./files/etc/nixos/yeet/assets/xterm-ghostty.terminfo
         '';
       };
     in

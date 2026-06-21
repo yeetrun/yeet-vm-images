@@ -104,6 +104,11 @@ fi
 if [ -z "$kernel_version" ]; then
 	kernel_version="$(basename "$kernel_path")"
 fi
+kernel_config_path="$(dirname "$kernel_path")/kernel.config"
+if [ ! -r "$kernel_config_path" ]; then
+	echo "kernel.config is required next to YEET_VM_KERNEL_PATH for the NixOS kernel selector: $kernel_config_path" >&2
+	exit 1
+fi
 if [ -n "$yeet_source_path" ]; then
 	require git
 fi
@@ -115,8 +120,10 @@ else
 	mkdir -p "$work_dir"
 	cleanup_work=0
 fi
+generated_inputs_dir="$(mktemp -d)"
 
 cleanup() {
+	rm -rf "$generated_inputs_dir"
 	if [ "${cleanup_work:-0}" = 1 ]; then
 		rm -rf "$work_dir"
 	fi
@@ -136,17 +143,60 @@ nix_flake_metadata_json() {
 	nix flake metadata "${nix_common_args[@]}" --json .
 }
 
+kernel_sha_raw="$(sha256sum "$kernel_path" | awk '{ print $1 }')"
+kernel_config_sha_raw="$(sha256sum "$kernel_config_path" | awk '{ print $1 }')"
+kernel_package_version="$kernel_version"
+kernel_package_version="${kernel_package_version#linux-}"
+kernel_package_version="${kernel_package_version%-yeet}"
+
+kernel_flake_dir="$generated_inputs_dir/yeet-vm-kernel-flake"
+rm -rf "$kernel_flake_dir"
+mkdir -p "$kernel_flake_dir"
+install -m 0644 "$kernel_path" "$kernel_flake_dir/vmlinux"
+install -m 0644 "$kernel_config_path" "$kernel_flake_dir/kernel.config"
+install -m 0644 kernel-packages/flake.nix "$kernel_flake_dir/flake.nix"
+install -m 0644 kernel-packages/yeet-kernel-package.nix "$kernel_flake_dir/yeet-kernel-package.nix"
+cat >"$kernel_flake_dir/metadata.nix" <<NIX
+{
+  kernelVersion = "$kernel_package_version";
+  vmlinuxPath = ./vmlinux;
+  kernelConfigPath = ./kernel.config;
+  vmlinuxSha256Raw = "$kernel_sha_raw";
+  kernelConfigSha256Raw = "$kernel_config_sha_raw";
+}
+NIX
+nix_common_args+=(--override-input yeet-vm-kernel "path:$kernel_flake_dir")
+
+if [[ -n "${YEET_VM_IMAGES_REF:-}" ]]; then
+	guest_kernel_ref="${YEET_VM_IMAGES_REF}"
+elif [[ -n "${GITHUB_SHA:-}" ]]; then
+	guest_kernel_ref="${GITHUB_SHA}"
+else
+	guest_kernel_ref="main"
+	echo "YEET_VM_IMAGES_REF is not set; pinning shipped guest flake lock to main" >&2
+fi
+
+guest_config_dir="$generated_inputs_dir/nixos-guest-config"
+rm -rf "$guest_config_dir"
+mkdir -p "$guest_config_dir"
+cp -R nixos/. "$guest_config_dir/"
+nix --extra-experimental-features "nix-command flakes" flake lock "$guest_config_dir" \
+	--override-input yeet-vm-kernel "github:yeetrun/yeet-vm-images/${guest_kernel_ref}?dir=kernel-packages" \
+	--output-lock-file "$guest_config_dir/flake.lock"
+nix_common_args+=(--override-input nixos-guest-config "path:$guest_config_dir")
+echo "Pinned guest yeet-vm-kernel input to ${guest_kernel_ref}"
+
 echo "Building NixOS 26.05 rootfs..."
-nix build "${nix_common_args[@]}" --out-link "$work_dir/rootfs-result" .#nixos-26_05-rootfs
+nix build "${nix_common_args[@]}" --out-link "$work_dir/rootfs-result" .#packages.x86_64-linux.nixos-26_05-rootfs
 rootfs_result="$(readlink -f "$work_dir/rootfs-result")"
 if [ ! -s "$rootfs_result" ]; then
 	echo "NixOS rootfs build did not produce a file: $rootfs_result" >&2
 	exit 1
 fi
 install -m 0644 "$rootfs_result" "$out_dir/rootfs.ext4"
-nix build "${nix_common_args[@]}" --out-link "$work_dir/yeet-init-result" .#yeet-init
+nix build "${nix_common_args[@]}" --out-link "$work_dir/yeet-init-result" .#packages.x86_64-linux.yeet-init
 yeet_init_result="$(readlink -f "$work_dir/yeet-init-result")"
-nix build "${nix_common_args[@]}" --out-link "$work_dir/yeet-agent-result" .#yeet-agent
+nix build "${nix_common_args[@]}" --out-link "$work_dir/yeet-agent-result" .#packages.x86_64-linux.yeet-agent
 yeet_agent_result="$(readlink -f "$work_dir/yeet-agent-result")"
 
 run_e2fsck() {

@@ -84,6 +84,8 @@ in {
   growRootBefore = cfg.systemd.services.yeet-grow-root.before;
   serviceEnabled = serviceEnabled;
   yeetAgentExec = cfg.systemd.services.yeet-agent.serviceConfig.ExecStart;
+  yeetVmKernelEnable = cfg.services.yeetVmKernel.enable;
+  selectedKernelJsonSource = builtins.toString cfg.environment.etc."yeet-vm/kernel/selected.json".source;
 }
 '
 )"
@@ -101,7 +103,8 @@ assert_probe() {
 }
 
 assert_probe '.nixFeatures | index("nix-command") != null and index("flakes") != null' "nix-command and flakes must be enabled by default"
-assert_probe '.nixPath | index("nixpkgs=flake:nixpkgs") != null and index("nixos-config=/etc/nixos/configuration.nix") != null' "nixos-rebuild must find nixpkgs and /etc/nixos/configuration.nix by default"
+assert_probe '.nixPath | map(startswith("nixpkgs=")) | any' "nixos-rebuild must find nixpkgs by default"
+assert_probe '.nixPath | index("nixos-config=/etc/nixos/configuration.nix") == null' "flake-first image must not wire nixos-config to /etc/nixos/configuration.nix"
 assert_probe '.environmentPathsToLink | index("/share/terminfo") != null' "terminfo must be linked into the system profile for Ghostty support"
 assert_probe '.etcTerminfoEnable == false' "/etc/terminfo must not be managed as a symlink because make-ext4-fs materializes it as a directory"
 assert_probe '.systemPackages | map(tostring) | any(contains("rsync"))' "rsync must be installed for yeet VM copy"
@@ -115,10 +118,41 @@ assert_probe '.growRootScript | contains("resize2fs \"$root_source\"")' "yeet-gr
 assert_probe '.growRootBefore | index("yeet-guest-ready.service") != null' "yeet-grow-root must run before yeet guest readiness"
 assert_probe '.serviceEnabled | all(.[]; . == true)' "expected core yeet NixOS services to be enabled"
 assert_probe '.yeetAgentExec == "/usr/local/lib/yeet-vm/yeet-agent"' "unexpected yeet-agent ExecStart"
+assert_probe '.yeetVmKernelEnable == true' "fresh NixOS image must enable the yeet VM kernel selector"
+assert_probe '.selectedKernelJsonSource | contains("/share/yeet-vm/kernel/selected.json")' "/etc/yeet-vm/kernel/selected.json must be configured from the yeet kernel package"
 grep -Fq 'ln -s ${yeetAgent}/bin/yeet-agent ./files/usr/local/lib/yeet-vm/yeet-agent' "$repo_root/flake.nix" || {
 	echo "NixOS rootfs must include /usr/local/lib/yeet-vm/yeet-agent" >&2
 	exit 1
 }
+for copy_path in \
+	'cp ${nixos-guest-config}/README.md ./files/etc/nixos/README.md' \
+	'cp ${nixos-guest-config}/flake.nix ./files/etc/nixos/flake.nix' \
+	'cp ${nixos-guest-config}/flake.lock ./files/etc/nixos/flake.lock' \
+	'cp ${nixos-guest-config}/system.nix ./files/etc/nixos/system.nix' \
+	'cp ${nixos-guest-config}/yeet/vm.nix ./files/etc/nixos/yeet/vm.nix' \
+	'cp ${nixos-guest-config}/yeet/assets/xterm-ghostty.terminfo ./files/etc/nixos/yeet/assets/xterm-ghostty.terminfo'
+do
+	grep -Fq "$copy_path" "$repo_root/flake.nix" || {
+		echo "NixOS rootfs must copy $copy_path" >&2
+		exit 1
+	}
+done
+if grep -Fq './files/etc/nixos/configuration.nix' "$repo_root/flake.nix"; then
+	echo "NixOS rootfs must not copy /etc/nixos/configuration.nix" >&2
+	exit 1
+fi
+for flake_content in \
+	'nixosConfigurations.yeet-vm' \
+	'github:yeetrun/yeet-vm-images?dir=kernel-packages' \
+	'./yeet/vm.nix' \
+	'./system.nix' \
+	'services.yeetVmKernel.enable = true;'
+do
+	grep -Fq "$flake_content" "$repo_root/nixos/flake.nix" || {
+		echo "NixOS guest flake must contain $flake_content" >&2
+		exit 1
+	}
+done
 
 override_probe="$(
 	nix eval --impure "${nix_common_args[@]}" --json --expr '

@@ -12,14 +12,14 @@
       pkgs = import nixpkgs { inherit system; };
       metadata = import ./metadata.nix;
       kernelLabel = "linux-${metadata.kernelVersion}-yeet";
-      vmlinux = pkgs.fetchurl {
+      vmlinux = metadata.vmlinuxPath or (pkgs.fetchurl {
         url = metadata.vmlinuxUrl;
         hash = metadata.vmlinuxHash;
-      };
-      kernelConfig = pkgs.fetchurl {
+      });
+      kernelConfig = metadata.kernelConfigPath or (pkgs.fetchurl {
         url = metadata.kernelConfigUrl;
         hash = metadata.kernelConfigHash;
-      };
+      });
       kernelPackage = pkgs.callPackage ./yeet-kernel-package.nix {
         inherit vmlinux kernelConfig;
         inherit (metadata) kernelVersion vmlinuxSha256Raw kernelConfigSha256Raw;

@@ -141,3 +141,9 @@ bash -n \
 
 grep -q 'system.activationScripts.yeet-vm-kernel-sync-message.text' "$repo_root/kernel-packages/flake.nix"
 grep -q 'Reboot this VM to boot the selected kernel.' "$repo_root/kernel-packages/flake.nix"
+grep -q 'nixosModules.default' "$repo_root/kernel-packages/flake.nix"
+grep -q 'metadata.vmlinuxPath or' "$repo_root/kernel-packages/flake.nix"
+grep -q 'metadata.kernelConfigPath or' "$repo_root/kernel-packages/flake.nix"
+grep -q 'environment.etc."yeet-vm/kernel/selected.json".source' "$repo_root/kernel-packages/flake.nix"
+grep -q 'share/yeet-vm/kernel/selected.json' "$repo_root/kernel-packages/flake.nix"
+grep -q 'share/yeet-vm/kernel/selected.json' "$repo_root/kernel-packages/yeet-kernel-package.nix"

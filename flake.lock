@@ -1,5 +1,17 @@
 {
   "nodes": {
+    "nixos-guest-config": {
+      "flake": false,
+      "locked": {
+        "path": "./nixos",
+        "type": "path"
+      },
+      "original": {
+        "path": "./nixos",
+        "type": "path"
+      },
+      "parent": []
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1780734595,
@@ -18,8 +30,10 @@
     },
     "root": {
       "inputs": {
+        "nixos-guest-config": "nixos-guest-config",
         "nixpkgs": "nixpkgs",
-        "yeet": "yeet"
+        "yeet": "yeet",
+        "yeet-vm-kernel": "yeet-vm-kernel"
       }
     },
     "yeet": {
@@ -38,6 +52,22 @@
         "repo": "yeet",
         "type": "github"
       }
+    },
+    "yeet-vm-kernel": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "./kernel-packages",
+        "type": "path"
+      },
+      "original": {
+        "path": "./kernel-packages",
+        "type": "path"
+      },
+      "parent": []
     }
   },
   "root": "root",
