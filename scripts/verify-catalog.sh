@@ -8,6 +8,7 @@ if [ "$script_dir" = "$script_source" ]; then
 fi
 repo_root="$(cd "$script_dir/.." && pwd)"
 catalog="$repo_root/catalog.json"
+manifest_version_pattern='(v[0-9]+|kernel-[0-9]+[.][0-9]+([.][0-9]+)?-v[0-9]+)'
 
 require() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -75,7 +76,7 @@ jq -c '.images[]' "$catalog" | while IFS= read -r image; do
 	curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 60 "$manifest_url" -o "$manifest"
 	version="$(jq -r '.version // empty' "$manifest")"
 	version_prefix_regex="${version_prefix//./\\.}"
-	if ! jq -e --arg version_re "^${version_prefix_regex}v[0-9]+$" '
+	if ! jq -e --arg version_re "^${version_prefix_regex}${manifest_version_pattern}$" '
 	  (.version | type == "string") and
 	  (.version | test($version_re))
 	' "$manifest" >/dev/null; then
@@ -83,9 +84,16 @@ jq -c '.images[]' "$catalog" | while IFS= read -r image; do
 		exit 1
 	fi
 	jq -e '
+	  def hybrid_kernel_from_version:
+	    ((.version | capture("-kernel-(?<kernel>[0-9]+[.][0-9]+([.][0-9]+)?)-v[0-9]+$").kernel) // "");
 	  (.guest_init == "/usr/local/lib/yeet-vm/yeet-init") and
 	  (.guest_agent == "/usr/local/lib/yeet-vm/yeet-agent") and
 	  (.guest_agent_sha256 | test("^[0-9a-f]{64}$")) and
+	  ((has("upstream_kernel_version") | not) or (
+	    (.upstream_kernel_version | type == "string" and test("^[0-9]+[.][0-9]+([.][0-9]+)?$")) and
+	    ((hybrid_kernel_from_version == "") or (.upstream_kernel_version == hybrid_kernel_from_version))
+	  )) and
+	  ((has("kernel_source_sha256") | not) or (.kernel_source_sha256 | type == "string" and test("^[0-9a-f]{64}$"))) and
 	  (.checksums | type == "object")
 	' "$manifest" >/dev/null
 done

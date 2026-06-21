@@ -10,6 +10,142 @@ script_dir="$(cd "$script_dir" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 testdata_dir="$repo_root/scripts/testdata"
 
+expected_manifest_version_pattern='(v[0-9]+|kernel-[0-9]+[.][0-9]+([.][0-9]+)?-v[0-9]+)'
+manifest_version_pattern="$(sed -n "s/^manifest_version_pattern='\(.*\)'$/\1/p" "$repo_root/scripts/verify-catalog.sh")"
+if [ "$manifest_version_pattern" != "$expected_manifest_version_pattern" ]; then
+	echo "verify-catalog.sh does not accept hybrid kernel manifest versions" >&2
+	exit 1
+fi
+
+version_prefix="ubuntu-26.04-amd64-"
+version_prefix_regex="${version_prefix//./\\.}"
+version_re="^${version_prefix_regex}${manifest_version_pattern}$"
+jq -n -e --arg version "ubuntu-26.04-amd64-v16" --arg version_re "$version_re" '
+  $version | test($version_re)
+' >/dev/null
+jq -n -e --arg version "ubuntu-26.04-amd64-kernel-7.1.1-v16" --arg version_re "$version_re" '
+  $version | test($version_re)
+' >/dev/null
+
+tmp_dir="$(mktemp -d)"
+cleanup() {
+	rm -rf "$tmp_dir"
+}
+trap cleanup EXIT
+
+cat >"$tmp_dir/curl" <<'MOCK_CURL'
+#!/usr/bin/env bash
+set -euo pipefail
+
+out=""
+url=""
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		-o)
+			out="$2"
+			shift 2
+			;;
+		--retry | --retry-delay | --connect-timeout | --max-time)
+			shift 2
+			;;
+		-*)
+			shift
+			;;
+		*)
+			url="$1"
+			shift
+			;;
+	esac
+done
+
+case "$url" in
+	*ubuntu/26.04* | *ubuntu-26.04-amd64*)
+		family="ubuntu-26.04-amd64"
+		;;
+	*nixos/26.05* | *nixos-26.05-amd64*)
+		family="nixos-26.05-amd64"
+		;;
+	*)
+		echo "unexpected manifest URL: $url" >&2
+		exit 1
+		;;
+esac
+
+case "${YEET_TEST_MANIFEST_VERSION_STYLE:-hybrid}" in
+	legacy)
+		version="${family}-v16"
+		;;
+	hybrid)
+		version="${family}-kernel-7.1.1-v16"
+		;;
+	*)
+		echo "unexpected manifest version style: ${YEET_TEST_MANIFEST_VERSION_STYLE:-hybrid}" >&2
+		exit 1
+		;;
+esac
+
+cat >"$out" <<EOF
+{
+  "version": "$version",
+  "guest_init": "/usr/local/lib/yeet-vm/yeet-init",
+  "guest_agent": "/usr/local/lib/yeet-vm/yeet-agent",
+  "guest_agent_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "checksums": {}${YEET_TEST_PROVENANCE_JSON:-}
+}
+EOF
+MOCK_CURL
+chmod +x "$tmp_dir/curl"
+
+assert_mock_manifest_version_style() {
+	style="$1"
+	expected_version="$2"
+	manifest="$tmp_dir/mock-$style-manifest.json"
+
+	YEET_TEST_MANIFEST_VERSION_STYLE="$style" "$tmp_dir/curl" \
+		"https://github.com/yeetrun/yeet-vm-images/releases/download/ubuntu-26.04-amd64-latest/manifest.json" \
+		-o "$manifest"
+	actual_version="$(jq -r '.version' "$manifest")"
+	if [ "$actual_version" != "$expected_version" ]; then
+		echo "$style mock manifest expected version $expected_version but got $actual_version" >&2
+		exit 1
+	fi
+}
+
+assert_mock_manifest_version_style "legacy" "ubuntu-26.04-amd64-v16"
+assert_mock_manifest_version_style "hybrid" "ubuntu-26.04-amd64-kernel-7.1.1-v16"
+
+run_catalog_provenance_case() {
+	name="$1"
+	provenance_json="$2"
+	expected_result="$3"
+	manifest_version_style="${4:-hybrid}"
+
+	if output="$(YEET_TEST_MANIFEST_VERSION_STYLE="$manifest_version_style" YEET_TEST_PROVENANCE_JSON="$provenance_json" PATH="$tmp_dir:$PATH" "$repo_root/scripts/verify-catalog.sh" 2>&1)"; then
+		actual_result="pass"
+	else
+		actual_result="fail"
+	fi
+
+	if [ "$actual_result" != "$expected_result" ]; then
+		echo "$name provenance case expected $expected_result but got $actual_result" >&2
+		if [ -n "$output" ]; then
+			echo "$output" >&2
+		fi
+		exit 1
+	fi
+}
+
+valid_kernel_sha="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+run_catalog_provenance_case "legacy versions" "" "pass" "legacy"
+run_catalog_provenance_case "legacy version with valid upstream_kernel_version" ", \"upstream_kernel_version\": \"7.1.2\"" "pass" "legacy"
+run_catalog_provenance_case "absent fields" "" "pass"
+run_catalog_provenance_case "valid fields" ", \"upstream_kernel_version\": \"7.1.1\", \"kernel_source_sha256\": \"$valid_kernel_sha\"" "pass"
+run_catalog_provenance_case "hybrid version with mismatched upstream_kernel_version" ", \"upstream_kernel_version\": \"7.1.2\"" "fail"
+run_catalog_provenance_case "present-null upstream_kernel_version" ", \"upstream_kernel_version\": null" "fail"
+run_catalog_provenance_case "malformed upstream_kernel_version" ", \"upstream_kernel_version\": \"7.x\"" "fail"
+run_catalog_provenance_case "malformed kernel_source_sha256" ", \"kernel_source_sha256\": \"not-a-sha256\"" "fail"
+run_catalog_provenance_case "present-null kernel_source_sha256" ", \"kernel_source_sha256\": null" "fail"
+
 kernel_info="$(
 	YEET_KERNEL_RELEASES_JSON_URL="file://$testdata_dir/kernel-releases-7.1.1.json" \
 	YEET_KERNEL_SHA256SUMS_URL="file://$testdata_dir/kernel-sha256sums-7.x.asc" \

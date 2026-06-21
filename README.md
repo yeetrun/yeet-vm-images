@@ -29,6 +29,20 @@ payloads such as `vm://ubuntu/26.04` to stable latest manifest URLs. Publishing
 a new image version only updates the immutable release and the matching
 `*-latest` release; edit `catalog.json` only when adding or changing a family.
 
+## Automatic Kernel Refresh
+
+Phase 1 prepares catalog validation and manifest metadata for a future
+`Sync latest stable Linux kernel VM images` workflow. Once that workflow is
+added later in this branch, it will run daily or manually, read kernel.org
+latest stable metadata, compare the Ubuntu and NixOS latest manifests, and only
+build stale families.
+
+Immutable versions use hybrid tags, such as
+`ubuntu-26.04-amd64-kernel-7.1.1-v16`. The final `v<N>` remains the per-family
+image revision, which allows revving image, rootfs, Firecracker, or guest
+tooling changes without changing kernel. `*-latest` aliases and catalog
+payloads remain stable.
+
 ## Ubuntu 26.04
 
 The Ubuntu family is built from the official Ubuntu 26.04 cloud image, boots a
