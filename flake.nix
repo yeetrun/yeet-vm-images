@@ -58,7 +58,7 @@
         ];
       };
 
-      nixosRootfs = import "${nixpkgs}/nixos/lib/make-ext4-fs.nix" {
+      nixosRootfs = import ./nix/make-ext4-rootfs.nix {
         inherit pkgs lib;
         inherit (pkgs)
           e2fsprogs
@@ -68,6 +68,7 @@
           zstd
           ;
         compressImage = false;
+        inodeHeadroomPercent = 25;
         storePaths = [
           nixosSystem.config.system.build.toplevel
           yeetInit

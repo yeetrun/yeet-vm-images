@@ -74,6 +74,7 @@ in {
   environmentPathsToLink = cfg.environment.pathsToLink;
   etcTerminfoEnable = cfg.environment.etc.terminfo.enable;
   systemPackages = map builtins.toString cfg.environment.systemPackages;
+  bootKernelEnable = cfg.boot.kernel.enable;
   bootModprobeConfigEnable = cfg.boot.modprobeConfig.enable;
   bootKernelModules = cfg.boot.kernelModules;
   modprobeEnabled = modprobeEnabled;
@@ -108,6 +109,7 @@ assert_probe '.nixPath | index("nixos-config=/etc/nixos/configuration.nix") == n
 assert_probe '.environmentPathsToLink | index("/share/terminfo") != null' "terminfo must be linked into the system profile for Ghostty support"
 assert_probe '.etcTerminfoEnable == false' "/etc/terminfo must not be managed as a symlink because make-ext4-fs materializes it as a directory"
 assert_probe '.systemPackages | map(tostring) | any(contains("rsync"))' "rsync must be installed for yeet VM copy"
+assert_probe '.bootKernelEnable == false' "NixOS image must not include the default NixOS kernel closure because Firecracker boots the yeet-selected external kernel"
 assert_probe '.bootModprobeConfigEnable == true' "NixOS activation expects boot.modprobeConfig for /proc/sys/kernel/modprobe"
 assert_probe '.bootKernelModules == []' "default NixOS hardware module requests must be cleared for the yeet microVM kernel"
 assert_probe '.modprobeEnabled["modprobe@configfs"] == false and .modprobeEnabled["modprobe@drm"] == false and .modprobeEnabled["modprobe@efi_pstore"] == false and .modprobeEnabled["modprobe@fuse"] == false' "modprobe@ units must be disabled by default in the yeet microVM profile"
@@ -122,6 +124,14 @@ assert_probe '.yeetVmKernelEnable == true' "fresh NixOS image must enable the ye
 assert_probe '.selectedKernelJsonSource | contains("/share/yeet-vm/kernel/selected.json")' "/etc/yeet-vm/kernel/selected.json must be configured from the yeet kernel package"
 grep -Fq 'ln -s ${yeetAgent}/bin/yeet-agent ./files/usr/local/lib/yeet-vm/yeet-agent' "$repo_root/flake.nix" || {
 	echo "NixOS rootfs must include /usr/local/lib/yeet-vm/yeet-agent" >&2
+	exit 1
+}
+grep -Fq 'import ./nix/make-ext4-rootfs.nix' "$repo_root/flake.nix" || {
+	echo "NixOS rootfs must use the yeet ext4 builder with explicit inode headroom" >&2
+	exit 1
+}
+grep -Fq 'mkfs.ext4 -N $mkfsInodes' "$repo_root/nix/make-ext4-rootfs.nix" || {
+	echo "NixOS ext4 builder must request explicit mkfs inode headroom" >&2
 	exit 1
 }
 for copy_path in \
@@ -167,6 +177,7 @@ let
   cfg = (flake.nixosConfigurations.yeet-nixos-26_05.extendModules {
     modules = [
       ({ lib, ... }: {
+        boot.kernel.enable = true;
         boot.kernelModules = lib.mkForce [ "dummy" ];
         systemd.services = builtins.listToAttrs (map
           (name: {

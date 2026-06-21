@@ -187,16 +187,16 @@ nix_common_args+=(--override-input nixos-guest-config "path:$guest_config_dir")
 echo "Pinned guest yeet-vm-kernel input to ${guest_kernel_ref}"
 
 echo "Building NixOS 26.05 rootfs..."
-nix build "${nix_common_args[@]}" --out-link "$work_dir/rootfs-result" .#packages.x86_64-linux.nixos-26_05-rootfs
+nix build "${nix_common_args[@]}" --print-build-logs --out-link "$work_dir/rootfs-result" .#packages.x86_64-linux.nixos-26_05-rootfs
 rootfs_result="$(readlink -f "$work_dir/rootfs-result")"
 if [ ! -s "$rootfs_result" ]; then
 	echo "NixOS rootfs build did not produce a file: $rootfs_result" >&2
 	exit 1
 fi
 install -m 0644 "$rootfs_result" "$out_dir/rootfs.ext4"
-nix build "${nix_common_args[@]}" --out-link "$work_dir/yeet-init-result" .#packages.x86_64-linux.yeet-init
+nix build "${nix_common_args[@]}" --print-build-logs --out-link "$work_dir/yeet-init-result" .#packages.x86_64-linux.yeet-init
 yeet_init_result="$(readlink -f "$work_dir/yeet-init-result")"
-nix build "${nix_common_args[@]}" --out-link "$work_dir/yeet-agent-result" .#packages.x86_64-linux.yeet-agent
+nix build "${nix_common_args[@]}" --print-build-logs --out-link "$work_dir/yeet-agent-result" .#packages.x86_64-linux.yeet-agent
 yeet_agent_result="$(readlink -f "$work_dir/yeet-agent-result")"
 
 run_e2fsck() {
