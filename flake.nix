@@ -76,7 +76,7 @@
         ];
         volumeLabel = "nixos";
         populateImageCommands = ''
-          mkdir -p \
+          install -d -m 0755 \
             ./files/etc/nixos/yeet/assets \
             ./files/etc/yeet-vm/kernel \
             ./files/etc/yeet-vm/systemd-network \
@@ -93,13 +93,13 @@
           ln -s ${yeetInit}/bin/yeet-init ./files/usr/local/lib/yeet-vm/yeet-init
           ln -s ${yeetAgent}/bin/yeet-agent ./files/usr/local/lib/yeet-vm/yeet-agent
 
-          cp ${nixos-guest-config}/README.md ./files/etc/nixos/README.md
-          cp ${nixos-guest-config}/flake.nix ./files/etc/nixos/flake.nix
-          cp ${nixos-guest-config}/flake.lock ./files/etc/nixos/flake.lock
-          cp ${nixos-guest-config}/system.nix ./files/etc/nixos/system.nix
-          cp ${nixos-guest-config}/yeet/vm.nix ./files/etc/nixos/yeet/vm.nix
-          cp ${nixos-guest-config}/yeet/assets/xterm-ghostty.terminfo ./files/etc/nixos/yeet/assets/xterm-ghostty.terminfo
-          cp ${nixosSystem.config.environment.etc."yeet-vm/kernel/selected.json".source} ./files/etc/yeet-vm/kernel/selected.json
+          install -m 0644 ${nixos-guest-config}/README.md ./files/etc/nixos/README.md
+          install -m 0644 ${nixos-guest-config}/flake.nix ./files/etc/nixos/flake.nix
+          install -m 0644 ${nixos-guest-config}/flake.lock ./files/etc/nixos/flake.lock
+          install -m 0644 ${nixos-guest-config}/system.nix ./files/etc/nixos/system.nix
+          install -m 0644 ${nixos-guest-config}/yeet/vm.nix ./files/etc/nixos/yeet/vm.nix
+          install -m 0644 ${nixos-guest-config}/yeet/assets/xterm-ghostty.terminfo ./files/etc/nixos/yeet/assets/xterm-ghostty.terminfo
+          install -m 0644 ${nixosSystem.config.environment.etc."yeet-vm/kernel/selected.json".source} ./files/etc/yeet-vm/kernel/selected.json
         '';
       };
     in

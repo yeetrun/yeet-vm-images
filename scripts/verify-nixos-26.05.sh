@@ -141,17 +141,17 @@ grep -Fq 'mkfs.ext4 -N $mkfsInodes' "$repo_root/nix/make-ext4-rootfs.nix" || {
 	echo "NixOS ext4 builder must request explicit mkfs inode headroom" >&2
 	exit 1
 }
-for copy_path in \
-	'cp ${nixos-guest-config}/README.md ./files/etc/nixos/README.md' \
-	'cp ${nixos-guest-config}/flake.nix ./files/etc/nixos/flake.nix' \
-	'cp ${nixos-guest-config}/flake.lock ./files/etc/nixos/flake.lock' \
-	'cp ${nixos-guest-config}/system.nix ./files/etc/nixos/system.nix' \
-	'cp ${nixos-guest-config}/yeet/vm.nix ./files/etc/nixos/yeet/vm.nix' \
-	'cp ${nixos-guest-config}/yeet/assets/xterm-ghostty.terminfo ./files/etc/nixos/yeet/assets/xterm-ghostty.terminfo' \
-	'cp ${nixosSystem.config.environment.etc."yeet-vm/kernel/selected.json".source} ./files/etc/yeet-vm/kernel/selected.json'
+for install_path in \
+	'install -m 0644 ${nixos-guest-config}/README.md ./files/etc/nixos/README.md' \
+	'install -m 0644 ${nixos-guest-config}/flake.nix ./files/etc/nixos/flake.nix' \
+	'install -m 0644 ${nixos-guest-config}/flake.lock ./files/etc/nixos/flake.lock' \
+	'install -m 0644 ${nixos-guest-config}/system.nix ./files/etc/nixos/system.nix' \
+	'install -m 0644 ${nixos-guest-config}/yeet/vm.nix ./files/etc/nixos/yeet/vm.nix' \
+	'install -m 0644 ${nixos-guest-config}/yeet/assets/xterm-ghostty.terminfo ./files/etc/nixos/yeet/assets/xterm-ghostty.terminfo' \
+	'install -m 0644 ${nixosSystem.config.environment.etc."yeet-vm/kernel/selected.json".source} ./files/etc/yeet-vm/kernel/selected.json'
 do
-	grep -Fq "$copy_path" "$repo_root/flake.nix" || {
-		echo "NixOS rootfs must copy $copy_path" >&2
+	grep -Fq "$install_path" "$repo_root/flake.nix" || {
+		echo "NixOS rootfs must install $install_path" >&2
 		exit 1
 	}
 done
