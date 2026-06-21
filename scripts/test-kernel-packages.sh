@@ -56,12 +56,16 @@ grep -q '/usr/lib/yeet-vm-kernel/sync-message "linux-7.1.1-yeet"' "$capture_root
 cmp "$kernel_dir/vmlinux" "$capture_root/usr/lib/yeet-vm/kernels/linux-7.1.1-yeet/vmlinux"
 cmp "$kernel_dir/kernel.config" "$capture_root/usr/lib/yeet-vm/kernels/linux-7.1.1-yeet/kernel.config"
 message="$(YEET_VM_SERVICE_NAME=tyler-exit-node "$capture_root/usr/lib/yeet-vm-kernel/sync-message" linux-7.1.1-yeet 2>&1)"
-printf '%s\n' "$message" | grep -q 'yeet vm kernel sync tyler-exit-node --restart'
+printf '%s\n' "$message" | grep -q 'Reboot this VM to boot the selected kernel.'
+if printf '%s\n' "$message" | grep -q 'yeet vm kernel sync'; then
+	echo "package message should not require manual yeet vm kernel sync" >&2
+	exit 1
+fi
 printf 'tyler-exit-node\n' >"$tmp_dir/hostname"
 message="$(env -u YEET_VM_SERVICE_NAME YEET_VM_HOSTNAME_FILE="$tmp_dir/hostname" "$capture_root/usr/lib/yeet-vm-kernel/sync-message" linux-7.1.1-yeet 2>&1)"
-printf '%s\n' "$message" | grep -q 'yeet vm kernel sync tyler-exit-node --restart'
+printf '%s\n' "$message" | grep -q 'Reboot this VM to boot the selected kernel.'
 message="$(YEET_VM_SERVICE_NAME= YEET_VM_HOSTNAME_FILE="$tmp_dir/missing-hostname" "$capture_root/usr/lib/yeet-vm-kernel/sync-message" linux-7.1.1-yeet 2>&1)"
-printf '%s\n' "$message" | grep -q 'yeet vm kernel sync <service-name> --restart'
+printf '%s\n' "$message" | grep -q 'Reboot this VM to boot the selected kernel.'
 
 cat >"$fake_bin/apt-ftparchive" <<'FAKE_APT_FTPARCHIVE'
 #!/usr/bin/env bash
@@ -106,4 +110,4 @@ bash -n \
 	"$repo_root/scripts/publish-apt-repo.sh"
 
 grep -q 'system.activationScripts.yeet-vm-kernel-sync-message.text' "$repo_root/kernel-packages/flake.nix"
-grep -q 'yeet vm kernel sync' "$repo_root/kernel-packages/flake.nix"
+grep -q 'Reboot this VM to boot the selected kernel.' "$repo_root/kernel-packages/flake.nix"

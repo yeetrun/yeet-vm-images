@@ -7,25 +7,10 @@ if [ -z "$version" ]; then
 	exit 2
 fi
 
-service_name="${YEET_VM_SERVICE_NAME:-}"
-hostname_file="${YEET_VM_HOSTNAME_FILE:-/etc/yeet-vm/hostname}"
-if [ -z "$service_name" ] && [ -r "$hostname_file" ]; then
-	IFS= read -r service_name <"$hostname_file" || service_name=""
-fi
-
-case "$service_name" in
-	"" | *[!A-Za-z0-9._-]*)
-		service_name="<service-name>"
-		;;
-esac
-
 cat >&2 <<MESSAGE
 
 yeet VM kernel $version selected.
 
-Firecracker boots this VM from a host-side kernel path. To boot this selected
-kernel, run from your yeet client:
-
-  yeet vm kernel sync $service_name --restart
+Reboot this VM to boot the selected kernel.
 
 MESSAGE

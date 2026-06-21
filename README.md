@@ -45,8 +45,7 @@ payloads remain stable.
 
 The package source workflow publishes the same yeet-managed kernel artifacts as
 guest-consumable package sources. Package installation is opt-in and writes a
-data-only selector under `/etc/yeet-vm/kernel/selected.json`; it does not change
-the Firecracker boot kernel until catch syncs that selector.
+data-only selector under `/etc/yeet-vm/kernel/selected.json`.
 
 Ubuntu guests can add the apt source and install or upgrade the package:
 
@@ -71,19 +70,20 @@ NixOS guests can consume the published flake tarball:
 }
 ```
 
-After either guest path installs or rebuilds the selector, the guest prints the
-matching host-side sync command. The command uses `/etc/yeet-vm/hostname` when
-yeet metadata is available and falls back to a `<service-name>` placeholder
-otherwise:
+After either guest path installs or rebuilds the selector, reboot the guest:
 
 ```bash
-yeet vm kernel sync <service-name> --restart
+sudo reboot
 ```
 
 The guest package or rebuild only selects the desired kernel under
 `/etc/yeet-vm/kernel/selected.json`. Firecracker still boots from a host-side
-kernel path, so the yeet sync command is what copies that selected kernel back
-to catch and restarts the VM on the new kernel.
+kernel path, so catch syncs the selected kernel at the guest reboot boundary
+before starting the next Firecracker process. The fallback operator command is:
+
+```bash
+yeet vm kernel sync <service-name> --restart
+```
 
 ## Ubuntu 26.04
 
