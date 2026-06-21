@@ -359,16 +359,30 @@ jobs:
             echo "rootfs ext4 features are not compatible with common LTS host tooling: $rootfs_features" >&2
             exit 1
           fi
+          debugfs_path_exists() {
+            local path="$1"
+            local output
+            output="$(debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" 2>&1 || true)"
+            if printf '%s\n' "$output" | grep -q 'File not found'; then
+              return 1
+            fi
+            if printf '%s\n' "$output" | grep -q '^Inode:'; then
+              return 0
+            fi
+            echo "could not inspect $path with debugfs" >&2
+            printf '%s\n' "$output" >&2
+            exit 1
+          }
           assert_path_exists() {
             local path="$1"
-            if ! debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" >/dev/null 2>&1; then
+            if ! debugfs_path_exists "$path"; then
               echo "expected $path to exist" >&2
               exit 1
             fi
           }
           assert_path_absent() {
             local path="$1"
-            if debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" >/dev/null 2>&1; then
+            if debugfs_path_exists "$path"; then
               echo "expected $path to be absent" >&2
               exit 1
             fi
