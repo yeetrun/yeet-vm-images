@@ -143,5 +143,15 @@ fi
 assert_log "create kernel-linux-7.1.1-yeet-v1 --draft --target abc123 --title kernel-linux-7.1.1-yeet-v1 --notes-file $out_dir/release-notes.md
 upload kernel-linux-7.1.1-yeet-v1 vmlinux
 upload kernel-linux-7.1.1-yeet-v1 kernel.config
-delete kernel-linux-7.1.1-yeet-v1 --yes"
+delete kernel-linux-7.1.1-yeet-v1 --cleanup-tag --yes"
 unset YEET_FAKE_GH_FAIL_UPLOAD
+
+checksum_dir="$tmp_dir/kernel-checksums"
+mkdir -p "$checksum_dir"
+printf 'kernel\n' >"$checksum_dir/vmlinux"
+printf 'config\n' >"$checksum_dir/kernel.config"
+(
+	cd "$checksum_dir"
+	sha256sum vmlinux kernel.config >kernel-checksums.txt
+	sha256sum -c kernel-checksums.txt
+)

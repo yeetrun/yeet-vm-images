@@ -77,6 +77,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Preflight release target
+        run: |
+          set -euo pipefail
+          overwrite="${{ inputs.overwrite_release }}"
+          if [ "$overwrite" = "true" ]; then
+            exit 0
+          fi
+          release_exists=0
+          tag_exists=0
+          if gh release view "$KERNEL_RELEASE" >/dev/null 2>&1; then
+            release_exists=1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$KERNEL_RELEASE" >/dev/null 2>&1; then
+            tag_exists=1
+          fi
+          if [ "$release_exists" -eq 1 ] || [ "$tag_exists" -eq 1 ]; then
+            echo "Release or tag $KERNEL_RELEASE already exists. Re-run with overwrite_release=true to replace it." >&2
+            exit 1
+          fi
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -103,7 +123,10 @@ jobs:
           set -euo pipefail
           vmlinux_sha="$(sha256sum "$KERNEL_OUT_DIR/vmlinux" | awk '{ print $1 }')"
           kernel_config_sha="$(sha256sum "$KERNEL_OUT_DIR/kernel.config" | awk '{ print $1 }')"
-          sha256sum "$KERNEL_OUT_DIR/vmlinux" "$KERNEL_OUT_DIR/kernel.config" >"$KERNEL_OUT_DIR/kernel-checksums.txt"
+          (
+            cd "$KERNEL_OUT_DIR"
+            sha256sum vmlinux kernel.config > kernel-checksums.txt
+          )
           jq -n \
             --arg release "$KERNEL_RELEASE" \
             --arg upstream_kernel_version "$KERNEL_VERSION" \
@@ -140,6 +163,23 @@ jobs:
             test -s "$KERNEL_OUT_DIR/$asset"
           done
           (cd "$KERNEL_OUT_DIR" && sha256sum -c kernel-checksums.txt)
+          check_manifest_checksum() {
+            local asset="$1"
+            local want
+            local got
+            want="$(jq -r --arg asset "$asset" '.checksums[$asset] // empty' "$KERNEL_OUT_DIR/kernel-manifest.json")"
+            if [ -z "$want" ]; then
+              echo "manifest missing checksum for $asset" >&2
+              exit 1
+            fi
+            got="$(sha256sum "$KERNEL_OUT_DIR/$asset" | awk '{ print $1 }')"
+            if [ "$got" != "$want" ]; then
+              echo "manifest checksum mismatch for $asset: got $got, want $want" >&2
+              exit 1
+            fi
+          }
+          check_manifest_checksum vmlinux
+          check_manifest_checksum kernel.config
           jq -e '
             .schema_version == 1 and
             .release == env.KERNEL_RELEASE and

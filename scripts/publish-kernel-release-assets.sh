@@ -33,7 +33,7 @@ file_size() {
 cleanup_draft() {
 	if [ "$release_created" -eq 1 ] && [ "$release_published" -eq 0 ]; then
 		echo "Deleting incomplete draft release $tag" >&2
-		gh release delete "$tag" --yes >/dev/null 2>&1 || true
+		gh release delete "$tag" --cleanup-tag --yes >/dev/null 2>&1 || true
 	fi
 }
 
