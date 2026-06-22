@@ -295,6 +295,7 @@ jobs:
             fi
           }
           check_manifest_checksum vmlinux
+          check_manifest_checksum kernel.config
           check_manifest_checksum rootfs.ext4.zst
           check_manifest_checksum firecracker
           jq -e '

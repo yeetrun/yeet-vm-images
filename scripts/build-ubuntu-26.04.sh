@@ -625,6 +625,11 @@ if [ -n "$initrd_artifact" ]; then
 	initrd_manifest_line='  "initrd": "initrd.img",'
 	initrd_checksum_line='    "initrd.img": "'"$initrd_sha"'",'
 fi
+kernel_config_checksum_line=""
+if [ -f "$out_dir/kernel.config" ]; then
+	kernel_config_sha="$(sha256sum "$out_dir/kernel.config" | awk '{ print $1 }')"
+	kernel_config_checksum_line='    "kernel.config": "'"$kernel_config_sha"'",'
+fi
 upstream_kernel_version_manifest_line="$(manifest_optional_string_line "upstream_kernel_version" "$upstream_kernel_version")"
 kernel_source_url_manifest_line="$(manifest_optional_string_line "kernel_source_url" "$kernel_source_url")"
 kernel_source_sha256_manifest_line="$(manifest_optional_string_line "kernel_source_sha256" "$kernel_source_sha256")"
@@ -668,6 +673,7 @@ ${yeet_source_rev_manifest_line}
   "checksums": {
     "vmlinux": "$kernel_sha",
 $initrd_checksum_line
+$kernel_config_checksum_line
     "rootfs.ext4.zst": "$rootfs_sha",
     "firecracker": "$firecracker_sha"
   }
