@@ -45,7 +45,7 @@ resolve_from_tags() {
 	    tag = $0
 	    if (index(tag, prefix) == 1) {
 	      revision = substr(tag, length(prefix) + 1)
-	      if (revision ~ /^[0-9]+$/ && revision + 0 > max) {
+	      if (revision ~ /^[1-9][0-9]*$/ && revision + 0 > max) {
 	        max = revision + 0
 	      }
 	    }

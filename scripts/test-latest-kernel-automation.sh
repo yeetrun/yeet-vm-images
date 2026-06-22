@@ -373,6 +373,16 @@ jq -e '
   .next_release == "kernel-linux-7.1.1-yeet-v3"
 ' <<<"$kernel_release" >/dev/null
 
+kernel_release_with_malformed_suffix="$("$repo_root/scripts/resolve-kernel-release.sh" 7.1.2 "$testdata_dir/kernel-release-tags.txt")"
+jq -e '
+  .upstream_kernel_version == "7.1.2" and
+  .kernel_version == "linux-7.1.2-yeet" and
+  .current_revision == 1 and
+  .current_release == "kernel-linux-7.1.2-yeet-v1" and
+  .next_revision == 2 and
+  .next_release == "kernel-linux-7.1.2-yeet-v2"
+' <<<"$kernel_release_with_malformed_suffix" >/dev/null
+
 new_kernel_release="$("$repo_root/scripts/resolve-kernel-release.sh" 7.2.0 "$testdata_dir/kernel-release-tags.txt")"
 jq -e '
   .upstream_kernel_version == "7.2.0" and
