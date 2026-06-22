@@ -119,7 +119,6 @@ jobs:
 
           ubuntu_current_kernel="$(current_upstream_kernel "$RUNNER_TEMP/ubuntu-latest-manifest.json")"
           nixos_current_kernel="$(current_upstream_kernel "$RUNNER_TEMP/nixos-latest-manifest.json")"
-          ubuntu_current_version="$(jq -r '.version' "$RUNNER_TEMP/ubuntu-latest-manifest.json")"
           ubuntu_build="$(should_build "$ubuntu_current_kernel")"
           nixos_build="$(should_build "$nixos_current_kernel")"
 
@@ -138,28 +137,13 @@ jobs:
           kernel_release_build="true"
 
           if [ -n "$kernel_current_release" ]; then
-            asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${kernel_current_release}"
-            manifest="$RUNNER_TEMP/current-kernel-manifest.json"
-            if curl -fsSL --retry 3 -o "$manifest" "$asset_base/kernel-manifest.json"; then
-              if jq -e \
-                --arg release "$kernel_current_release" \
-                --arg kernel "$KERNEL_VERSION" \
-                --arg source_url "${{ steps.kernel.outputs.kernel_source_url }}" \
-                --arg source_sha "${{ steps.kernel.outputs.kernel_source_sha256 }}" \
-                --arg config_url "https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config" \
-                '.release == $release and
-                 .upstream_kernel_version == $kernel and
-                 .kernel_version == ("linux-" + $kernel + "-yeet") and
-                 .kernel_source_url == $source_url and
-                 .kernel_source_sha256 == $source_sha and
-                 .kernel_config_url == $config_url and
-                 .localversion == "-yeet" and
-                 (.checksums.vmlinux | test("^[0-9a-f]{64}$")) and
-                 (.checksums["kernel.config"] | test("^[0-9a-f]{64}$"))' \
-                "$manifest" >/dev/null; then
-                kernel_release="$kernel_current_release"
-                kernel_release_build="false"
-              fi
+            if YEET_KERNEL_VERSION="$KERNEL_VERSION" \
+              YEET_KERNEL_SOURCE_URL="${{ steps.kernel.outputs.kernel_source_url }}" \
+              YEET_KERNEL_SOURCE_SHA256="${{ steps.kernel.outputs.kernel_source_sha256 }}" \
+              YEET_KERNEL_CONFIG_URL="https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config" \
+              scripts/download-kernel-release.sh "$kernel_current_release" "$RUNNER_TEMP/current-kernel-release"; then
+              kernel_release="$kernel_current_release"
+              kernel_release_build="false"
             fi
           fi
 
