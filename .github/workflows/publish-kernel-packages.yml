@@ -7,8 +7,8 @@ on:
         description: Upstream Linux kernel version to package.
         required: true
         type: string
-      image_release:
-        description: Immutable image release whose vmlinux and kernel.config assets should be packaged.
+      kernel_release:
+        description: Immutable canonical kernel release whose vmlinux and kernel.config assets should be packaged.
         required: true
         type: string
     outputs:
@@ -20,8 +20,8 @@ on:
       kernel_version:
         description: Upstream Linux kernel version to package.
         required: true
-      image_release:
-        description: Immutable image release whose vmlinux and kernel.config assets should be packaged.
+      kernel_release:
+        description: Immutable canonical kernel release whose vmlinux and kernel.config assets should be packaged.
         required: true
 
 concurrency:
@@ -43,7 +43,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     env:
       KERNEL_VERSION: ${{ inputs.kernel_version }}
-      IMAGE_RELEASE: ${{ inputs.image_release }}
+      KERNEL_RELEASE: ${{ inputs.kernel_release }}
       YEET_APT_GPG_PRIVATE_KEY: ${{ secrets.YEET_APT_GPG_PRIVATE_KEY }}
       YEET_APT_GPG_KEY_ID: ${{ secrets.YEET_APT_GPG_KEY_ID }}
 
@@ -68,28 +68,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y apt-utils curl dpkg-dev gnupg jq python3
 
-      - name: Download image kernel assets
+      - name: Download canonical kernel assets
         run: |
           set -euo pipefail
 
-          asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${IMAGE_RELEASE}"
+          asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${KERNEL_RELEASE}"
           kernel_dir="dist/kernel-package-source"
           mkdir -p "$kernel_dir"
-          curl -fsSL --retry 3 -o "$kernel_dir/manifest.json" "$asset_base/manifest.json"
+          curl -fsSL --retry 3 -o "$kernel_dir/kernel-manifest.json" "$asset_base/kernel-manifest.json"
           curl -fsSL --retry 3 -o "$kernel_dir/vmlinux" "$asset_base/vmlinux"
           curl -fsSL --retry 3 -o "$kernel_dir/kernel.config" "$asset_base/kernel.config"
 
-          manifest_kernel="$(jq -r '.upstream_kernel_version // (.kernel_version | sub("^linux-"; "") | sub("-yeet$"; ""))' "$kernel_dir/manifest.json")"
+          manifest_release="$(jq -r '.release' "$kernel_dir/kernel-manifest.json")"
+          if [ "$manifest_release" != "$KERNEL_RELEASE" ]; then
+            echo "kernel release mismatch: manifest=$manifest_release requested=$KERNEL_RELEASE" >&2
+            exit 1
+          fi
+          manifest_kernel="$(jq -r '.upstream_kernel_version' "$kernel_dir/kernel-manifest.json")"
           if [ "$manifest_kernel" != "$KERNEL_VERSION" ]; then
-            echo "image release $IMAGE_RELEASE has kernel $manifest_kernel, want $KERNEL_VERSION" >&2
+            echo "kernel release $KERNEL_RELEASE has kernel $manifest_kernel, want $KERNEL_VERSION" >&2
             exit 1
           fi
-          vmlinux_sha="$(sha256sum "$kernel_dir/vmlinux" | awk '{ print $1 }')"
-          manifest_vmlinux_sha="$(jq -r '.checksums.vmlinux // empty' "$kernel_dir/manifest.json")"
-          if [ -n "$manifest_vmlinux_sha" ] && [ "$vmlinux_sha" != "$manifest_vmlinux_sha" ]; then
-            echo "vmlinux checksum mismatch: got $vmlinux_sha, want $manifest_vmlinux_sha" >&2
-            exit 1
-          fi
+          for asset in vmlinux kernel.config; do
+            got="$(sha256sum "$kernel_dir/$asset" | awk '{ print $1 }')"
+            want="$(jq -r --arg asset "$asset" '.checksums[$asset] // empty' "$kernel_dir/kernel-manifest.json")"
+            if [ -z "$want" ] || [ "$got" != "$want" ]; then
+              echo "$asset checksum mismatch: got $got, want ${want:-missing}" >&2
+              exit 1
+            fi
+          done
 
       - name: Build deb and apt repo
         run: |
@@ -108,7 +115,7 @@ jobs:
 
           vmlinux_sha="$(sha256sum dist/kernel-package-source/vmlinux | awk '{ print $1 }')"
           kernel_config_sha="$(sha256sum dist/kernel-package-source/kernel.config | awk '{ print $1 }')"
-          asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${IMAGE_RELEASE}"
+          asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${KERNEL_RELEASE}"
 
           cat >kernel-packages/metadata.nix <<NIX
           {

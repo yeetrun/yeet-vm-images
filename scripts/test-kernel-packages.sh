@@ -147,3 +147,16 @@ grep -q 'metadata.kernelConfigPath or' "$repo_root/kernel-packages/flake.nix"
 grep -q 'environment.etc."yeet-vm/kernel/selected.json".source' "$repo_root/kernel-packages/flake.nix"
 grep -q 'share/yeet-vm/kernel/selected.json' "$repo_root/kernel-packages/flake.nix"
 grep -q 'share/yeet-vm/kernel/selected.json' "$repo_root/kernel-packages/yeet-kernel-package.nix"
+
+grep -q 'kernel_release:' "$repo_root/.github/workflows/publish-kernel-packages.yml"
+if grep -q 'image_release:' "$repo_root/.github/workflows/publish-kernel-packages.yml"; then
+	echo "publish-kernel-packages.yml must not accept image_release" >&2
+	exit 1
+fi
+grep -q 'KERNEL_RELEASE:' "$repo_root/.github/workflows/publish-kernel-packages.yml"
+grep -q 'kernel-manifest.json' "$repo_root/.github/workflows/publish-kernel-packages.yml"
+grep -q 'releases/download/${KERNEL_RELEASE}' "$repo_root/.github/workflows/publish-kernel-packages.yml"
+if grep -q 'ubuntu-26.04-amd64-kernel' "$repo_root/kernel-packages/metadata.nix"; then
+	echo "kernel package metadata must not point at Ubuntu image releases" >&2
+	exit 1
+fi
