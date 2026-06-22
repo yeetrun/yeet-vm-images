@@ -267,6 +267,7 @@ jobs:
           check_manifest_checksum kernel.config
           check_manifest_checksum rootfs.ext4.zst
           check_manifest_checksum firecracker
+          # shellcheck disable=SC2016 # env.* is evaluated by jq, not by the shell.
           jq -e '
             .name == "yeet-nixos-26.05" and
             .distro == "nixos" and
@@ -317,6 +318,7 @@ jobs:
             exit 1
           fi
           grow_root_script="$(nix_eval_raw .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-grow-root.script)"
+          # shellcheck disable=SC2016 # $root_source is expected in the generated service script.
           printf '%s\n' "$grow_root_script" | grep -q 'resize2fs "$root_source"'
           grow_root_before="$(nix_eval_json .#nixosConfigurations.yeet-nixos-26_05.config.systemd.services.yeet-grow-root.before)"
           printf '%s\n' "$grow_root_before" | jq -e 'index("yeet-guest-ready.service") != null'
