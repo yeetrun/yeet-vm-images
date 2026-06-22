@@ -17,6 +17,7 @@ kernel_source_sha256="${YEET_KERNEL_SOURCE_SHA256:-}"
 image_revision="${YEET_VM_IMAGE_REVISION:-}"
 guest_init_path="${YEET_VM_INIT_PATH:-}"
 guest_agent_path="${YEET_VM_AGENT_PATH:-}"
+yeet_source_rev="${YEET_SOURCE_REV:-}"
 script_source="${BASH_SOURCE[0]}"
 script_dir="${script_source%/*}"
 if [ "$script_dir" = "$script_source" ]; then
@@ -92,7 +93,21 @@ manifest_optional_string_line() {
 	fi
 }
 
+manifest_optional_provenance_string_line() {
+	local field="$1"
+	local value="$2"
+
+	if [ -n "$value" ]; then
+		printf '    "%s": "%s",' "$field" "$value"
+	fi
+}
+
 if ! image_revision="$(validate_image_revision "$version" "$image_revision")"; then
+	exit 1
+fi
+
+if [ -n "$yeet_source_rev" ] && ! [[ "$yeet_source_rev" =~ ^[0-9a-f]{40}$ ]]; then
+	echo "YEET_SOURCE_REV must be a 40-character git revision when set: $yeet_source_rev" >&2
 	exit 1
 fi
 
@@ -613,6 +628,7 @@ fi
 upstream_kernel_version_manifest_line="$(manifest_optional_string_line "upstream_kernel_version" "$upstream_kernel_version")"
 kernel_source_url_manifest_line="$(manifest_optional_string_line "kernel_source_url" "$kernel_source_url")"
 kernel_source_sha256_manifest_line="$(manifest_optional_string_line "kernel_source_sha256" "$kernel_source_sha256")"
+yeet_source_rev_manifest_line="$(manifest_optional_provenance_string_line "yeet_rev" "$yeet_source_rev")"
 
 cat >"$out_dir/manifest.json" <<JSON
 {
@@ -639,6 +655,7 @@ $kernel_source_sha256_manifest_line
   "ubuntu_kernel_version": "$ubuntu_kernel_version",
   "provenance": {
     "build_time": "$build_time",
+${yeet_source_rev_manifest_line}
     "ubuntu_cloud_image_url": "$ubuntu_base_url/$ubuntu_image",
     "ubuntu_cloud_image_sha256": "$actual_image_sha",
     "ubuntu_cloud_sha256sums_url": "$ubuntu_base_url/SHA256SUMS",

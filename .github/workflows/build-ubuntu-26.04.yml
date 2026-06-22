@@ -229,6 +229,7 @@ jobs:
           "$HOME/.local/bin/mise" install
           "$HOME/.local/bin/mise" run guest:init:build
           "$HOME/.local/bin/mise" run guest:agent:build
+          echo "YEET_SOURCE_REV=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           test -x "$YEET_VM_INIT_BINARY"
           test -x "$YEET_VM_AGENT_BINARY"
 
@@ -257,6 +258,7 @@ jobs:
             YEET_VM_GHOSTTY_TERMINFO="$YEET_VM_GHOSTTY_TERMINFO" \
             YEET_VM_INIT_PATH="$YEET_VM_INIT_BINARY" \
             YEET_VM_AGENT_PATH="$YEET_VM_AGENT_BINARY" \
+            YEET_SOURCE_REV="$YEET_SOURCE_REV" \
             YEET_VM_KERNEL_PATH="$GITHUB_WORKSPACE/$KERNEL_OUT_DIR/vmlinux" \
             YEET_VM_KERNEL_VERSION="linux-${YEET_KERNEL_VERSION}-yeet" \
             ZSTD_LEVEL="$ZSTD_LEVEL" \
@@ -311,6 +313,7 @@ jobs:
             .upstream_kernel_version == env.YEET_VM_UPSTREAM_KERNEL_VERSION and
             .kernel_source_url == env.YEET_KERNEL_SOURCE_URL and
             .kernel_source_sha256 == env.YEET_KERNEL_SOURCE_SHA256 and
+            .provenance.yeet_rev == env.YEET_SOURCE_REV and
             .provenance.kernel_source == "yeet-managed"
           ' "$OUT_DIR/manifest.json"
           grep -q '^CONFIG_MODULES=y$' "$OUT_DIR/kernel.config"

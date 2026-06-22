@@ -38,6 +38,10 @@ for builder in "$repo_root/scripts/build-ubuntu-26.04.sh" "$repo_root/scripts/bu
 		assert_builder_omits_unconditional_optional_manifest_field "$builder" "$field"
 	done
 done
+assert_builder_manifest_field "$repo_root/scripts/build-ubuntu-26.04.sh" "yeet_rev"
+grep -Fq 'YEET_SOURCE_REV' "$repo_root/scripts/build-ubuntu-26.04.sh"
+grep -Fq "YEET_SOURCE_REV=\$(git rev-parse HEAD)" "$repo_root/.github/workflows/build-ubuntu-26.04.yml"
+grep -Fq ".provenance.yeet_rev == env.YEET_SOURCE_REV" "$repo_root/.github/workflows/build-ubuntu-26.04.yml"
 
 expected_manifest_version_pattern='(v[0-9]+|kernel-[0-9]+[.][0-9]+([.][0-9]+)?-v[0-9]+)'
 manifest_version_pattern="$(sed -n "s/^manifest_version_pattern='\(.*\)'$/\1/p" "$repo_root/scripts/verify-catalog.sh")"
