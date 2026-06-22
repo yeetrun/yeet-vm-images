@@ -34,7 +34,9 @@ jobs:
       nixos_build: ${{ steps.plan.outputs.nixos_build }}
       nixos_version: ${{ steps.plan.outputs.nixos_version }}
       nixos_image_revision: ${{ steps.plan.outputs.nixos_image_revision }}
-      package_image_release: ${{ steps.plan.outputs.package_image_release }}
+      kernel_current_release: ${{ steps.plan.outputs.kernel_current_release }}
+      kernel_release: ${{ steps.plan.outputs.kernel_release }}
+      kernel_release_build: ${{ steps.plan.outputs.kernel_release_build }}
       yeet_ref: ${{ steps.plan.outputs.yeet_ref }}
 
     steps:
@@ -129,9 +131,36 @@ jobs:
           nixos_version="$(jq -r '.version' <<<"$nixos_next")"
           nixos_image_revision="$(jq -r '.image_revision' <<<"$nixos_next")"
 
-          package_image_release="$ubuntu_current_version"
-          if [ "$ubuntu_build" = "true" ]; then
-            package_image_release="$ubuntu_version"
+          kernel_release_info="$(scripts/resolve-kernel-release.sh "$KERNEL_VERSION")"
+          kernel_current_release="$(jq -r '.current_release' <<<"$kernel_release_info")"
+          kernel_next_release="$(jq -r '.next_release' <<<"$kernel_release_info")"
+          kernel_release="$kernel_next_release"
+          kernel_release_build="true"
+
+          if [ -n "$kernel_current_release" ]; then
+            asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${kernel_current_release}"
+            manifest="$RUNNER_TEMP/current-kernel-manifest.json"
+            if curl -fsSL --retry 3 -o "$manifest" "$asset_base/kernel-manifest.json"; then
+              if jq -e \
+                --arg release "$kernel_current_release" \
+                --arg kernel "$KERNEL_VERSION" \
+                --arg source_url "${{ steps.kernel.outputs.kernel_source_url }}" \
+                --arg source_sha "${{ steps.kernel.outputs.kernel_source_sha256 }}" \
+                --arg config_url "https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config" \
+                '.release == $release and
+                 .upstream_kernel_version == $kernel and
+                 .kernel_version == ("linux-" + $kernel + "-yeet") and
+                 .kernel_source_url == $source_url and
+                 .kernel_source_sha256 == $source_sha and
+                 .kernel_config_url == $config_url and
+                 .localversion == "-yeet" and
+                 (.checksums.vmlinux | test("^[0-9a-f]{64}$")) and
+                 (.checksums["kernel.config"] | test("^[0-9a-f]{64}$"))' \
+                "$manifest" >/dev/null; then
+                kernel_release="$kernel_current_release"
+                kernel_release_build="false"
+              fi
+            fi
           fi
 
           {
@@ -141,7 +170,9 @@ jobs:
             echo "nixos_build=$nixos_build"
             echo "nixos_version=$nixos_version"
             echo "nixos_image_revision=$nixos_image_revision"
-            echo "package_image_release=$package_image_release"
+            echo "kernel_current_release=$kernel_current_release"
+            echo "kernel_release=$kernel_release"
+            echo "kernel_release_build=$kernel_release_build"
             echo "yeet_ref=$YEET_REF"
           } >>"$GITHUB_OUTPUT"
 
@@ -157,13 +188,35 @@ jobs:
             echo "| Ubuntu 26.04 amd64 | \`${ubuntu_current_kernel:-unknown}\` | $(action_label "$ubuntu_build") | \`$ubuntu_version\` | \`$ubuntu_image_revision\` |"
             echo "| NixOS 26.05 amd64 | \`${nixos_current_kernel:-unknown}\` | $(action_label "$nixos_build") | \`$nixos_version\` | \`$nixos_image_revision\` |"
             echo
-            echo "- Kernel package source image release: \`$package_image_release\`"
+            echo "- Kernel release: \`$kernel_release\`"
+            echo "- Kernel release build: \`$kernel_release_build\`"
           } >>"$GITHUB_STEP_SUMMARY"
+
+  build-kernel:
+    name: Build canonical kernel release
+    needs: detect
+    if: ${{ needs.detect.outputs.kernel_release_build == 'true' }}
+    uses: ./.github/workflows/build-kernel.yml
+    with:
+      kernel_release: ${{ needs.detect.outputs.kernel_release }}
+      kernel_version: ${{ needs.detect.outputs.kernel_version }}
+      kernel_source_url: ${{ needs.detect.outputs.kernel_source_url }}
+      kernel_source_sha256: ${{ needs.detect.outputs.kernel_source_sha256 }}
+      kernel_config_url: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
+      overwrite_release: false
+    secrets: inherit
 
   build-ubuntu:
     name: Build Ubuntu 26.04 latest stable kernel image
-    needs: detect
-    if: ${{ needs.detect.outputs.ubuntu_build == 'true' }}
+    needs:
+      - detect
+      - build-kernel
+    if: >-
+      ${{
+        always() &&
+        needs.detect.outputs.ubuntu_build == 'true' &&
+        (needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped')
+      }}
     uses: ./.github/workflows/build-ubuntu-26.04.yml
     with:
       version: ${{ needs.detect.outputs.ubuntu_version }}
@@ -174,6 +227,7 @@ jobs:
       kernel_version: ${{ needs.detect.outputs.kernel_version }}
       upstream_kernel_version: ${{ needs.detect.outputs.kernel_version }}
       image_revision: ${{ needs.detect.outputs.ubuntu_image_revision }}
+      kernel_release: ${{ needs.detect.outputs.kernel_release }}
       kernel_source_url: ${{ needs.detect.outputs.kernel_source_url }}
       kernel_source_sha256: ${{ needs.detect.outputs.kernel_source_sha256 }}
       kernel_config_url: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
@@ -187,11 +241,13 @@ jobs:
     name: Build NixOS 26.05 latest stable kernel image
     needs:
       - detect
+      - build-kernel
       - publish-kernel-packages
     if: >-
       ${{
         always() &&
         needs.detect.outputs.nixos_build == 'true' &&
+        (needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped') &&
         needs.publish-kernel-packages.result == 'success'
       }}
     uses: ./.github/workflows/build-nixos-26.05.yml
@@ -203,6 +259,7 @@ jobs:
       kernel_version: ${{ needs.detect.outputs.kernel_version }}
       upstream_kernel_version: ${{ needs.detect.outputs.kernel_version }}
       image_revision: ${{ needs.detect.outputs.nixos_image_revision }}
+      kernel_release: ${{ needs.detect.outputs.kernel_release }}
       kernel_source_url: ${{ needs.detect.outputs.kernel_source_url }}
       kernel_source_sha256: ${{ needs.detect.outputs.kernel_source_sha256 }}
       kernel_config_url: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
@@ -216,15 +273,15 @@ jobs:
     name: Publish kernel package sources
     needs:
       - detect
-      - build-ubuntu
+      - build-kernel
     if: >-
       ${{
         always() &&
         (needs.detect.outputs.ubuntu_build == 'true' || needs.detect.outputs.nixos_build == 'true') &&
-        (needs.build-ubuntu.result == 'success' || needs.build-ubuntu.result == 'skipped')
+        (needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped')
       }}
     uses: ./.github/workflows/publish-kernel-packages.yml
     with:
       kernel_version: ${{ needs.detect.outputs.kernel_version }}
-      image_release: ${{ needs.detect.outputs.package_image_release }}
+      kernel_release: ${{ needs.detect.outputs.kernel_release }}
     secrets: inherit
