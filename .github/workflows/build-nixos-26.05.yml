@@ -47,6 +47,11 @@ on:
         required: false
         type: string
         default: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
+      kernel_release:
+        description: Canonical kernel release to consume. Empty builds the kernel locally.
+        required: false
+        type: string
+        default: ""
       zstd_level:
         description: zstd compression level for rootfs.ext4.zst.
         required: false
@@ -109,6 +114,10 @@ on:
         description: Firecracker guest kernel config URL.
         required: true
         default: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
+      kernel_release:
+        description: Canonical kernel release to consume. Empty builds the kernel locally.
+        required: false
+        default: ""
       zstd_level:
         description: zstd compression level for rootfs.ext4.zst.
         required: true
@@ -147,6 +156,7 @@ jobs:
       OUT_DIR: dist/${{ inputs.version }}
       FIRECRACKER_VERSION: ${{ inputs.firecracker_version }}
       KERNEL_OUT_DIR: dist/kernel-linux-${{ inputs.kernel_version }}
+      KERNEL_RELEASE: ${{ inputs.kernel_release }}
       ZSTD_LEVEL: ${{ inputs.zstd_level }}
       YEET_KERNEL_VERSION: ${{ inputs.kernel_version }}
       YEET_KERNEL_SOURCE_URL: ${{ inputs.kernel_source_url }}
@@ -206,9 +216,14 @@ jobs:
           scripts/verify-nixos-26.05.sh
           scripts/verify-catalog.sh
 
-      - name: Build yeet-managed kernel
+      - name: Prepare yeet-managed kernel
         run: |
-          scripts/build-linux-kernel.sh "$KERNEL_OUT_DIR"
+          set -euo pipefail
+          if [ -n "$KERNEL_RELEASE" ]; then
+            scripts/download-kernel-release.sh "$KERNEL_RELEASE" "$KERNEL_OUT_DIR"
+          else
+            scripts/build-linux-kernel.sh "$KERNEL_OUT_DIR"
+          fi
 
       - name: Build image bundle
         run: |
