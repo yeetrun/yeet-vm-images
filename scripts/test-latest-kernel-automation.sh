@@ -362,3 +362,28 @@ jq -e '
   .image_revision == 16 and
   .version == "nixos-26.05-amd64-kernel-7.1.2-v16"
 ' <<<"$nixos_version" >/dev/null
+
+kernel_release="$("$repo_root/scripts/resolve-kernel-release.sh" 7.1.1 "$testdata_dir/kernel-release-tags.txt")"
+jq -e '
+  .upstream_kernel_version == "7.1.1" and
+  .kernel_version == "linux-7.1.1-yeet" and
+  .current_revision == 2 and
+  .current_release == "kernel-linux-7.1.1-yeet-v2" and
+  .next_revision == 3 and
+  .next_release == "kernel-linux-7.1.1-yeet-v3"
+' <<<"$kernel_release" >/dev/null
+
+new_kernel_release="$("$repo_root/scripts/resolve-kernel-release.sh" 7.2.0 "$testdata_dir/kernel-release-tags.txt")"
+jq -e '
+  .upstream_kernel_version == "7.2.0" and
+  .kernel_version == "linux-7.2.0-yeet" and
+  .current_revision == 0 and
+  .current_release == "" and
+  .next_revision == 1 and
+  .next_release == "kernel-linux-7.2.0-yeet-v1"
+' <<<"$new_kernel_release" >/dev/null
+
+if "$repo_root/scripts/resolve-kernel-release.sh" "7.x" "$testdata_dir/kernel-release-tags.txt" >/dev/null 2>&1; then
+	echo "resolve-kernel-release.sh accepted malformed kernel version" >&2
+	exit 1
+fi

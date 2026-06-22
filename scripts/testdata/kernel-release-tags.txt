@@ -1,0 +1,9 @@
+ubuntu-26.04-amd64-v16
+ubuntu-26.04-amd64-kernel-7.1.1-v18
+nixos-26.05-amd64-kernel-7.1.1-v6
+kernel-linux-7.0-yeet-v1
+kernel-linux-7.1.1-yeet-v1
+kernel-linux-7.1.1-yeet-v2
+kernel-linux-7.1.2-yeet-v1
+kernel-linux-7.1.2-yeet-v9-extra
+not-a-kernel-release
