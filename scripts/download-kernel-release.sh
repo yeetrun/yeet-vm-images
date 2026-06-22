@@ -96,4 +96,7 @@ check_asset() {
 
 check_asset vmlinux
 check_asset kernel.config
-sha256sum "$out_dir/vmlinux" "$out_dir/kernel.config" >"$out_dir/kernel-checksums.txt"
+(
+	cd "$out_dir"
+	sha256sum vmlinux kernel.config >kernel-checksums.txt
+)
