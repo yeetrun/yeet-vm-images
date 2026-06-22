@@ -1,0 +1,201 @@
+name: Build yeet kernel
+
+on:
+  workflow_call:
+    inputs:
+      kernel_release:
+        description: Canonical kernel release tag to publish, for example kernel-linux-7.1.1-yeet-v1.
+        required: true
+        type: string
+      kernel_version:
+        description: Upstream Linux kernel version to build.
+        required: true
+        type: string
+      kernel_source_url:
+        description: Linux kernel source tarball URL.
+        required: true
+        type: string
+      kernel_source_sha256:
+        description: Linux kernel source tarball SHA-256.
+        required: true
+        type: string
+      kernel_config_url:
+        description: Firecracker guest kernel config URL.
+        required: true
+        type: string
+      overwrite_release:
+        description: Delete an existing release/tag with the same version before publishing.
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      kernel_release:
+        description: Canonical kernel release tag to publish, for example kernel-linux-7.1.1-yeet-v1.
+        required: true
+      kernel_version:
+        description: Upstream Linux kernel version to build.
+        required: true
+      kernel_source_url:
+        description: Linux kernel source tarball URL.
+        required: true
+      kernel_source_sha256:
+        description: Linux kernel source tarball SHA-256.
+        required: true
+      kernel_config_url:
+        description: Firecracker guest kernel config URL.
+        required: true
+      overwrite_release:
+        description: Delete an existing release/tag with the same version before publishing.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and publish canonical kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      KERNEL_RELEASE: ${{ inputs.kernel_release }}
+      KERNEL_VERSION: ${{ inputs.kernel_version }}
+      KERNEL_SOURCE_URL: ${{ inputs.kernel_source_url }}
+      KERNEL_SOURCE_SHA256: ${{ inputs.kernel_source_sha256 }}
+      KERNEL_CONFIG_URL: ${{ inputs.kernel_config_url }}
+      KERNEL_OUT_DIR: dist/${{ inputs.kernel_release }}
+      YEET_KERNEL_VERSION: ${{ inputs.kernel_version }}
+      YEET_KERNEL_SOURCE_URL: ${{ inputs.kernel_source_url }}
+      YEET_KERNEL_SOURCE_SHA256: ${{ inputs.kernel_source_sha256 }}
+      YEET_KERNEL_CONFIG_URL: ${{ inputs.kernel_config_url }}
+      YEET_KERNEL_WORK_DIR: ${{ github.workspace }}/.kernel-build-work
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc \
+            bison \
+            build-essential \
+            curl \
+            dwarves \
+            file \
+            flex \
+            jq \
+            libelf-dev \
+            libssl-dev \
+            ncurses-bin \
+            xz-utils
+
+      - name: Build kernel
+        run: |
+          scripts/build-linux-kernel.sh "$KERNEL_OUT_DIR"
+
+      - name: Write kernel manifest
+        run: |
+          set -euo pipefail
+          vmlinux_sha="$(sha256sum "$KERNEL_OUT_DIR/vmlinux" | awk '{ print $1 }')"
+          kernel_config_sha="$(sha256sum "$KERNEL_OUT_DIR/kernel.config" | awk '{ print $1 }')"
+          sha256sum "$KERNEL_OUT_DIR/vmlinux" "$KERNEL_OUT_DIR/kernel.config" >"$KERNEL_OUT_DIR/kernel-checksums.txt"
+          jq -n \
+            --arg release "$KERNEL_RELEASE" \
+            --arg upstream_kernel_version "$KERNEL_VERSION" \
+            --arg kernel_version "linux-${KERNEL_VERSION}-yeet" \
+            --arg kernel_source_url "$KERNEL_SOURCE_URL" \
+            --arg kernel_source_sha256 "$KERNEL_SOURCE_SHA256" \
+            --arg kernel_config_url "$KERNEL_CONFIG_URL" \
+            --arg localversion "-yeet" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg commit "$GITHUB_SHA" \
+            --arg vmlinux_sha "$vmlinux_sha" \
+            --arg kernel_config_sha "$kernel_config_sha" \
+            '{
+              schema_version: 1,
+              release: $release,
+              upstream_kernel_version: $upstream_kernel_version,
+              kernel_version: $kernel_version,
+              kernel_source_url: $kernel_source_url,
+              kernel_source_sha256: $kernel_source_sha256,
+              kernel_config_url: $kernel_config_url,
+              localversion: $localversion,
+              repository: $repository,
+              commit: $commit,
+              checksums: {
+                vmlinux: $vmlinux_sha,
+                "kernel.config": $kernel_config_sha
+              }
+            }' >"$KERNEL_OUT_DIR/kernel-manifest.json"
+
+      - name: Verify kernel assets
+        run: |
+          set -euo pipefail
+          for asset in vmlinux kernel.config kernel-manifest.json kernel-checksums.txt; do
+            test -s "$KERNEL_OUT_DIR/$asset"
+          done
+          (cd "$KERNEL_OUT_DIR" && sha256sum -c kernel-checksums.txt)
+          jq -e '
+            .schema_version == 1 and
+            .release == env.KERNEL_RELEASE and
+            .upstream_kernel_version == env.KERNEL_VERSION and
+            .kernel_version == ("linux-" + env.KERNEL_VERSION + "-yeet") and
+            .kernel_source_url == env.KERNEL_SOURCE_URL and
+            .kernel_source_sha256 == env.KERNEL_SOURCE_SHA256 and
+            .kernel_config_url == env.KERNEL_CONFIG_URL and
+            .localversion == "-yeet" and
+            (.checksums.vmlinux | test("^[0-9a-f]{64}$")) and
+            (.checksums["kernel.config"] | test("^[0-9a-f]{64}$"))
+          ' "$KERNEL_OUT_DIR/kernel-manifest.json"
+
+      - name: Check release target
+        run: |
+          set -euo pipefail
+          overwrite="${{ inputs.overwrite_release }}"
+          release_exists=0
+          tag_exists=0
+          if gh release view "$KERNEL_RELEASE" >/dev/null 2>&1; then
+            release_exists=1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$KERNEL_RELEASE" >/dev/null 2>&1; then
+            tag_exists=1
+          fi
+          if [ "$release_exists" -eq 0 ] && [ "$tag_exists" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$overwrite" != "true" ]; then
+            echo "Release or tag $KERNEL_RELEASE already exists. Re-run with overwrite_release=true to replace it." >&2
+            exit 1
+          fi
+          if [ "$release_exists" -eq 1 ]; then
+            gh release delete "$KERNEL_RELEASE" --cleanup-tag --yes
+          elif [ "$tag_exists" -eq 1 ]; then
+            git push origin ":refs/tags/$KERNEL_RELEASE"
+          fi
+
+      - name: Prepare release notes
+        run: |
+          cat >"$KERNEL_OUT_DIR/release-notes.md" <<EOF
+          Canonical yeet Firecracker kernel.
+
+          - Release: \`$KERNEL_RELEASE\`
+          - Kernel: \`linux-${KERNEL_VERSION}-yeet\`
+          - Source: <$KERNEL_SOURCE_URL>
+          - Config: <$KERNEL_CONFIG_URL>
+
+          See \`kernel-manifest.json\` for checksums and provenance.
+          EOF
+
+      - name: Publish release
+        run: |
+          scripts/publish-kernel-release-assets.sh \
+            "$KERNEL_RELEASE" \
+            "$KERNEL_RELEASE" \
+            "$GITHUB_SHA" \
+            "$KERNEL_OUT_DIR/release-notes.md" \
+            "$KERNEL_OUT_DIR"
