@@ -156,7 +156,12 @@ fi
 grep -q 'KERNEL_RELEASE:' "$repo_root/.github/workflows/publish-kernel-packages.yml"
 grep -q 'kernel-manifest.json' "$repo_root/.github/workflows/publish-kernel-packages.yml"
 grep -q 'releases/download/${KERNEL_RELEASE}' "$repo_root/.github/workflows/publish-kernel-packages.yml"
-if grep -q 'ubuntu-26.04-amd64-kernel' "$repo_root/kernel-packages/metadata.nix"; then
-	echo "kernel package metadata must not point at Ubuntu image releases" >&2
+grep -q 'asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${KERNEL_RELEASE}"' "$repo_root/.github/workflows/publish-kernel-packages.yml"
+if grep -q 'IMAGE_RELEASE' "$repo_root/.github/workflows/publish-kernel-packages.yml"; then
+	echo "publish-kernel-packages.yml must not use IMAGE_RELEASE" >&2
+	exit 1
+fi
+if grep -q 'asset_base=.*ubuntu-26.04-amd64-kernel' "$repo_root/.github/workflows/publish-kernel-packages.yml"; then
+	echo "publish workflow metadata asset base must not use Ubuntu image releases" >&2
 	exit 1
 fi
