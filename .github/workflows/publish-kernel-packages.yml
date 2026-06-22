@@ -72,31 +72,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${KERNEL_RELEASE}"
           kernel_dir="dist/kernel-package-source"
-          mkdir -p "$kernel_dir"
-          curl -fsSL --retry 3 -o "$kernel_dir/kernel-manifest.json" "$asset_base/kernel-manifest.json"
-          curl -fsSL --retry 3 -o "$kernel_dir/vmlinux" "$asset_base/vmlinux"
-          curl -fsSL --retry 3 -o "$kernel_dir/kernel.config" "$asset_base/kernel.config"
-
-          manifest_release="$(jq -r '.release' "$kernel_dir/kernel-manifest.json")"
-          if [ "$manifest_release" != "$KERNEL_RELEASE" ]; then
-            echo "kernel release mismatch: manifest=$manifest_release requested=$KERNEL_RELEASE" >&2
-            exit 1
-          fi
-          manifest_kernel="$(jq -r '.upstream_kernel_version' "$kernel_dir/kernel-manifest.json")"
-          if [ "$manifest_kernel" != "$KERNEL_VERSION" ]; then
-            echo "kernel release $KERNEL_RELEASE has kernel $manifest_kernel, want $KERNEL_VERSION" >&2
-            exit 1
-          fi
-          for asset in vmlinux kernel.config; do
-            got="$(sha256sum "$kernel_dir/$asset" | awk '{ print $1 }')"
-            want="$(jq -r --arg asset "$asset" '.checksums[$asset] // empty' "$kernel_dir/kernel-manifest.json")"
-            if [ -z "$want" ] || [ "$got" != "$want" ]; then
-              echo "$asset checksum mismatch: got $got, want ${want:-missing}" >&2
-              exit 1
-            fi
-          done
+          YEET_KERNEL_VERSION="$KERNEL_VERSION" \
+            scripts/download-kernel-release.sh "$KERNEL_RELEASE" "$kernel_dir"
 
       - name: Build deb and apt repo
         run: |

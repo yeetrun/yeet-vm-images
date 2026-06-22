@@ -154,8 +154,9 @@ if grep -q 'image_release:' "$repo_root/.github/workflows/publish-kernel-package
 	exit 1
 fi
 grep -q 'KERNEL_RELEASE:' "$repo_root/.github/workflows/publish-kernel-packages.yml"
-grep -q 'kernel-manifest.json' "$repo_root/.github/workflows/publish-kernel-packages.yml"
 grep -q 'releases/download/${KERNEL_RELEASE}' "$repo_root/.github/workflows/publish-kernel-packages.yml"
+grep -q 'YEET_KERNEL_VERSION="$KERNEL_VERSION"' "$repo_root/.github/workflows/publish-kernel-packages.yml"
+grep -q 'scripts/download-kernel-release.sh "$KERNEL_RELEASE" "$kernel_dir"' "$repo_root/.github/workflows/publish-kernel-packages.yml"
 grep -q 'asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${KERNEL_RELEASE}"' "$repo_root/.github/workflows/publish-kernel-packages.yml"
 if grep -q 'IMAGE_RELEASE' "$repo_root/.github/workflows/publish-kernel-packages.yml"; then
 	echo "publish-kernel-packages.yml must not use IMAGE_RELEASE" >&2
