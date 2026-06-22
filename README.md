@@ -29,11 +29,31 @@ payloads such as `vm://ubuntu/26.04` to stable latest manifest URLs. Publishing
 a new image version only updates the immutable release and the matching
 `*-latest` release; edit `catalog.json` only when adding or changing a family.
 
+## Canonical Kernel Releases
+
+Each yeet-managed Linux kernel is built once as an immutable canonical kernel
+release, such as `kernel-linux-7.1.1-yeet-v1`. That release owns the kernel
+assets shared by image and package workflows:
+
+- `vmlinux`
+- `kernel.config`
+- `kernel-manifest.json`
+- `kernel-checksums.txt`
+
+Ubuntu and NixOS image workflows accept an optional `kernel_release` input. When
+it is present, the workflow downloads and verifies those canonical assets. When
+it is empty, the workflow builds the kernel locally as the manual fallback.
+
+OS image bundles still include `vmlinux`, `kernel.config`, and checksums so
+catch can consume each published bundle as a self-contained VM payload.
+
 ## Automatic Kernel Refresh
 
 The `Sync latest stable Linux kernel VM images` workflow runs daily and can
 also be manually dispatched. It reads kernel.org latest stable metadata,
 compares the Ubuntu and NixOS latest manifests, and only builds stale families.
+When a kernel update is needed, it resolves or publishes the canonical kernel
+release first, then passes that release to package and image workflows.
 
 Immutable versions use hybrid tags, such as
 `ubuntu-26.04-amd64-kernel-7.1.1-v16`. The final `v<N>` remains the per-family
@@ -45,7 +65,9 @@ payloads remain stable.
 
 The package source workflow publishes the same yeet-managed kernel artifacts as
 guest-consumable package sources. Package installation is opt-in and writes a
-data-only selector under `/etc/yeet-vm/kernel/selected.json`.
+data-only selector under `/etc/yeet-vm/kernel/selected.json`. Package metadata
+is published from the canonical kernel release, so apt and Nix URLs point at the
+same source kernel artifacts used by the image workflows.
 
 Ubuntu guests can add the apt source and install or upgrade the package:
 
@@ -124,6 +146,10 @@ sudo YEET_VM_KERNEL_PATH="$PWD/dist/kernel-linux-7.0/vmlinux" \
   YEET_VM_AGENT_PATH="$PWD/../yeet/guest/yeet-agent/target/x86_64-unknown-linux-musl/release/yeet-agent" \
   scripts/build-ubuntu-26.04.sh
 ```
+
+This local build path is the manual fallback used when no `kernel_release` is
+supplied. Set `kernel_release` in the workflow to consume verified canonical
+kernel assets instead.
 
 The Ubuntu builder uses `assets/xterm-ghostty.terminfo` by default. Set
 `YEET_VM_GHOSTTY_TERMINFO` only when testing a different terminfo source.
@@ -248,6 +274,10 @@ YEET_VM_KERNEL_PATH="$PWD/dist/kernel-linux-7.0/vmlinux" \
   scripts/build-nixos-26.05.sh
 ```
 
+This local build path is the manual fallback used when no `kernel_release` is
+supplied. Set `kernel_release` in the workflow to consume verified canonical
+kernel assets instead.
+
 Local Nix checks:
 
 ```bash
@@ -269,7 +299,8 @@ integration, guest tool packaging, and user overrideability. Set
 Use the **Build Ubuntu 26.04 VM image** GitHub Actions workflow from the
 Actions tab. It is manually dispatched and runs on a GitHub-hosted Linux
 runner. The workflow checks out yeet at `yeet_ref`, builds the Rust
-`yeet-init` and `yeet-agent` guest tools, builds the managed kernel,
+`yeet-init` and `yeet-agent` guest tools, downloads a verified canonical kernel
+when `kernel_release` is set or builds the kernel locally when it is empty,
 customizes the Ubuntu rootfs, verifies the bundle, and publishes the release
 assets.
 
@@ -283,6 +314,8 @@ Inputs:
 - `ubuntu_cloud_base_url`: Ubuntu cloud image directory URL
 - `ubuntu_cloud_image`: Ubuntu cloud image tarball name
 - `firecracker_version`: Firecracker release version
+- `kernel_release`: optional canonical kernel release to consume; leave empty
+  to build the kernel locally
 - `kernel_version`: Linux kernel version to build
 - `upstream_kernel_version`: official upstream Linux kernel version recorded in
   the manifest
@@ -310,9 +343,10 @@ assets.
 ### NixOS
 
 Use the **Build NixOS 26.05 VM image** GitHub Actions workflow. It checks out
-yeet at `yeet_ref`, builds the managed kernel, builds the NixOS rootfs from the
-flake, verifies the bundle, publishes an immutable version release, and can
-also update the `nixos-26.05-amd64-latest` release alias used by catch.
+yeet at `yeet_ref`, downloads a verified canonical kernel when `kernel_release`
+is set or builds the kernel locally when it is empty, builds the NixOS rootfs
+from the flake, verifies the bundle, publishes an immutable version release,
+and can also update the `nixos-26.05-amd64-latest` release alias used by catch.
 
 Inputs:
 
@@ -321,6 +355,8 @@ Inputs:
   `nixos-26.05-amd64-v<N>` releases remain valid
 - `yeet_ref`: yeet repository ref used to build `guest/yeet-init` and
   `guest/yeet-agent`
+- `kernel_release`: optional canonical kernel release to consume; leave empty
+  to build the kernel locally
 - `kernel_version`: Linux kernel version to build
 - `upstream_kernel_version`: official upstream Linux kernel version recorded in
   the manifest

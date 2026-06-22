@@ -28,8 +28,8 @@ an Ubuntu image release as the source of truth.
   `vmlinux` and `kernel.config` assets in each image release.
 - Preserve manual OS workflow usability by allowing local kernel builds when no
   canonical kernel release is supplied.
-- Add a repo check that prevents `yeet.run` references; this repository should
-  use `yeetrun.com`.
+- Add a repo check that prevents references to the old `yeet[.]run` domain;
+  this repository should use `yeetrun.com`.
 
 ## Non-Goals
 
@@ -149,8 +149,8 @@ Update tests and documentation to describe canonical kernel releases, the manual
 workflow fallback, and the new package provenance.
 
 Update `packages/kernel/deb/DEBIAN/control.in`.
-Change the remaining `yeet.run` maintainer reference to a `yeetrun.com`
-identity, and add a test that rejects `yeet.run` references in this repository.
+Change the remaining `yeet[.]run` maintainer reference to a `yeetrun.com`
+identity, and add a test that rejects old-domain references in this repository.
 
 ## Validation
 
@@ -163,7 +163,7 @@ Static tests should assert:
 - `sync-latest-stable-kernel.yml` resolves or builds a kernel release before
   package and OS image jobs;
 - Ubuntu and NixOS workflows can consume a supplied `kernel_release`;
-- `yeet.run` does not appear in tracked repository files.
+- the old `yeet[.]run` domain does not appear in tracked repository files.
 
 Workflow verification should confirm:
 

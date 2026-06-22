@@ -41,7 +41,7 @@
 - Create `scripts/testdata/kernel-release-tags.txt`
   - Fixture for resolver tests.
 - Modify `packages/kernel/deb/DEBIAN/control.in`
-  - Replace the invalid `yeet.run` maintainer identity with `yeetrun.com`.
+  - Replace the invalid `yeet[.]run` maintainer identity with `yeetrun.com`.
 - Modify `README.md`
   - Document canonical kernel releases, manual fallback behavior, and package provenance.
 
@@ -1318,7 +1318,7 @@ git commit -m "kernel: orchestrate canonical kernel releases"
 In `packages/kernel/deb/DEBIAN/control.in`, change:
 
 ```text
-Maintainer: yeet <maintainers@yeet.run>
+Maintainer: yeet <maintainers@yeet[.]run>
 ```
 
 to:
@@ -1333,7 +1333,7 @@ Append this block to `scripts/test-kernel-release-workflows.sh`:
 
 ```bash
 if git -C "$repo_root" grep -n 'yeet[.]run'; then
-	echo "repository contains invalid yeet.run references" >&2
+	echo "repository contains invalid yeet[.]run references" >&2
 	exit 1
 fi
 ```

@@ -54,6 +54,11 @@ assert_job_not_contains() {
 sync_workflow="$repo_root/.github/workflows/sync-latest-stable-kernel.yml"
 publish_workflow="$repo_root/.github/workflows/publish-kernel-packages.yml"
 
+if git -C "$repo_root" grep -n 'yeet[.]run'; then
+	echo "repository contains invalid yeet[.]run references" >&2
+	exit 1
+fi
+
 assert_contains "$sync_workflow" "kernel_release:"
 assert_contains "$sync_workflow" "kernel_release_build:"
 assert_contains "$sync_workflow" 'YEET_KERNEL_VERSION="$KERNEL_VERSION" \'
