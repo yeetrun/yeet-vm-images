@@ -88,6 +88,7 @@ The kernel manifest should include:
 - Linux source URL and SHA256;
 - Firecracker config URL;
 - repository commit used for the build script;
+- kernel build fingerprint used to detect build-script behavior changes;
 - local version suffix;
 - `vmlinux` SHA256;
 - `kernel.config` SHA256;

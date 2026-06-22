@@ -121,6 +121,8 @@ jobs:
       - name: Write kernel manifest
         run: |
           set -euo pipefail
+          kernel_build_fingerprint="$(sha256sum scripts/build-linux-kernel.sh | awk '{ print $1 }')"
+          echo "KERNEL_BUILD_FINGERPRINT=$kernel_build_fingerprint" >>"$GITHUB_ENV"
           vmlinux_sha="$(sha256sum "$KERNEL_OUT_DIR/vmlinux" | awk '{ print $1 }')"
           kernel_config_sha="$(sha256sum "$KERNEL_OUT_DIR/kernel.config" | awk '{ print $1 }')"
           (
@@ -134,6 +136,7 @@ jobs:
             --arg kernel_source_url "$KERNEL_SOURCE_URL" \
             --arg kernel_source_sha256 "$KERNEL_SOURCE_SHA256" \
             --arg kernel_config_url "$KERNEL_CONFIG_URL" \
+            --arg kernel_build_fingerprint "$kernel_build_fingerprint" \
             --arg localversion "-yeet" \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg commit "$GITHUB_SHA" \
@@ -147,6 +150,7 @@ jobs:
               kernel_source_url: $kernel_source_url,
               kernel_source_sha256: $kernel_source_sha256,
               kernel_config_url: $kernel_config_url,
+              kernel_build_fingerprint: $kernel_build_fingerprint,
               localversion: $localversion,
               repository: $repository,
               commit: $commit,
@@ -188,6 +192,7 @@ jobs:
             .kernel_source_url == env.KERNEL_SOURCE_URL and
             .kernel_source_sha256 == env.KERNEL_SOURCE_SHA256 and
             .kernel_config_url == env.KERNEL_CONFIG_URL and
+            .kernel_build_fingerprint == env.KERNEL_BUILD_FINGERPRINT and
             .localversion == "-yeet" and
             (.checksums.vmlinux | test("^[0-9a-f]{64}$")) and
             (.checksums["kernel.config"] | test("^[0-9a-f]{64}$"))

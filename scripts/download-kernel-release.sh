@@ -24,6 +24,7 @@ expected_kernel_version="${YEET_KERNEL_VERSION:-}"
 expected_source_url="${YEET_KERNEL_SOURCE_URL:-}"
 expected_source_sha256="${YEET_KERNEL_SOURCE_SHA256:-}"
 expected_config_url="${YEET_KERNEL_CONFIG_URL:-}"
+expected_build_fingerprint="${YEET_KERNEL_BUILD_FINGERPRINT:-}"
 
 for cmd in awk curl jq mkdir sha256sum; do
 	require "$cmd"
@@ -74,6 +75,14 @@ if [ -n "$expected_config_url" ]; then
 	manifest_config_url="$(jq -r '.kernel_config_url' "$out_dir/kernel-manifest.json")"
 	if [ "$manifest_config_url" != "$expected_config_url" ]; then
 		echo "kernel config URL mismatch: manifest=$manifest_config_url expected=$expected_config_url" >&2
+		exit 1
+	fi
+fi
+
+if [ -n "$expected_build_fingerprint" ]; then
+	manifest_build_fingerprint="$(jq -r '.kernel_build_fingerprint // empty' "$out_dir/kernel-manifest.json")"
+	if [ "$manifest_build_fingerprint" != "$expected_build_fingerprint" ]; then
+		echo "kernel build fingerprint mismatch: manifest=${manifest_build_fingerprint:-missing} expected=$expected_build_fingerprint" >&2
 		exit 1
 	fi
 fi

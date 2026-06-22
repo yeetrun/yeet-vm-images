@@ -65,7 +65,12 @@ assert_contains "$sync_workflow" 'YEET_KERNEL_VERSION="$KERNEL_VERSION" \'
 assert_contains "$sync_workflow" 'YEET_KERNEL_SOURCE_URL="${{ steps.kernel.outputs.kernel_source_url }}" \'
 assert_contains "$sync_workflow" 'YEET_KERNEL_SOURCE_SHA256="${{ steps.kernel.outputs.kernel_source_sha256 }}" \'
 assert_contains "$sync_workflow" 'YEET_KERNEL_CONFIG_URL="https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config" \'
+assert_contains "$sync_workflow" 'kernel_build_fingerprint="$(sha256sum scripts/build-linux-kernel.sh | awk '"'"'{ print $1 }'"'"')"'
+assert_contains "$sync_workflow" 'YEET_KERNEL_BUILD_FINGERPRINT="$kernel_build_fingerprint" \'
 assert_contains "$sync_workflow" 'scripts/download-kernel-release.sh "$kernel_current_release" "$RUNNER_TEMP/current-kernel-release"'
+assert_contains "$sync_workflow" 'if [ "$kernel_release_build" = "true" ]; then'
+assert_contains "$sync_workflow" 'ubuntu_build="true"'
+assert_contains "$sync_workflow" 'nixos_build="true"'
 assert_not_contains "$sync_workflow" "package_image_release"
 assert_not_contains "$sync_workflow" "Kernel package source image release"
 

@@ -79,7 +79,7 @@ assert_log() {
 
 assert_workflow_contains() {
 	local needle="$1"
-	if ! grep -Fq "$needle" "$workflow_file"; then
+	if ! grep -Fq -- "$needle" "$workflow_file"; then
 		echo "workflow is missing expected text: $needle" >&2
 		exit 1
 	fi
@@ -87,7 +87,7 @@ assert_workflow_contains() {
 
 assert_workflow_not_contains() {
 	local needle="$1"
-	if grep -Fq "$needle" "$workflow_file"; then
+	if grep -Fq -- "$needle" "$workflow_file"; then
 		echo "workflow contains unexpected text: $needle" >&2
 		exit 1
 	fi
@@ -113,6 +113,10 @@ assert_workflow_order() {
 
 assert_workflow_order "Preflight release target" "Build kernel"
 assert_workflow_contains "sha256sum vmlinux kernel.config > kernel-checksums.txt"
+assert_workflow_contains 'kernel_build_fingerprint="$(sha256sum scripts/build-linux-kernel.sh | awk '"'"'{ print $1 }'"'"')"'
+assert_workflow_contains '--arg kernel_build_fingerprint "$kernel_build_fingerprint"'
+assert_workflow_contains 'kernel_build_fingerprint: $kernel_build_fingerprint'
+assert_workflow_contains ".kernel_build_fingerprint == env.KERNEL_BUILD_FINGERPRINT"
 assert_workflow_contains "check_manifest_checksum vmlinux"
 assert_workflow_contains "check_manifest_checksum kernel.config"
 assert_workflow_not_contains 'sha256sum "$KERNEL_OUT_DIR/vmlinux" "$KERNEL_OUT_DIR/kernel.config" >"$KERNEL_OUT_DIR/kernel-checksums.txt"'
