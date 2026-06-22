@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+workflow_file="$repo_root/.github/workflows/build-kernel.yml"
 tmp_dir="$(mktemp -d)"
 cleanup() {
 	rm -rf "$tmp_dir"
@@ -76,6 +77,46 @@ assert_log() {
 	fi
 }
 
+assert_workflow_contains() {
+	local needle="$1"
+	if ! grep -Fq "$needle" "$workflow_file"; then
+		echo "workflow is missing expected text: $needle" >&2
+		exit 1
+	fi
+}
+
+assert_workflow_not_contains() {
+	local needle="$1"
+	if grep -Fq "$needle" "$workflow_file"; then
+		echo "workflow contains unexpected text: $needle" >&2
+		exit 1
+	fi
+}
+
+workflow_line_for() {
+	local needle="$1"
+	awk -v needle="$needle" 'index($0, needle) { print NR; exit }' "$workflow_file"
+}
+
+assert_workflow_order() {
+	local first="$1"
+	local second="$2"
+	local first_line
+	local second_line
+	first_line="$(workflow_line_for "$first")"
+	second_line="$(workflow_line_for "$second")"
+	if [ -z "$first_line" ] || [ -z "$second_line" ] || [ "$first_line" -ge "$second_line" ]; then
+		echo "workflow order mismatch: expected '$first' before '$second'" >&2
+		exit 1
+	fi
+}
+
+assert_workflow_order "Preflight release target" "Build kernel"
+assert_workflow_contains "sha256sum vmlinux kernel.config > kernel-checksums.txt"
+assert_workflow_contains "check_manifest_checksum vmlinux"
+assert_workflow_contains "check_manifest_checksum kernel.config"
+assert_workflow_not_contains 'sha256sum "$KERNEL_OUT_DIR/vmlinux" "$KERNEL_OUT_DIR/kernel.config" >"$KERNEL_OUT_DIR/kernel-checksums.txt"'
+
 YEET_FAKE_GH_LOG="$tmp_dir/success.log"
 export YEET_FAKE_GH_LOG
 PATH="$bin_dir:$PATH" "$repo_root/scripts/publish-github-release-assets.sh" \
@@ -145,13 +186,3 @@ upload kernel-linux-7.1.1-yeet-v1 vmlinux
 upload kernel-linux-7.1.1-yeet-v1 kernel.config
 delete kernel-linux-7.1.1-yeet-v1 --cleanup-tag --yes"
 unset YEET_FAKE_GH_FAIL_UPLOAD
-
-checksum_dir="$tmp_dir/kernel-checksums"
-mkdir -p "$checksum_dir"
-printf 'kernel\n' >"$checksum_dir/vmlinux"
-printf 'config\n' >"$checksum_dir/kernel.config"
-(
-	cd "$checksum_dir"
-	sha256sum vmlinux kernel.config >kernel-checksums.txt
-	sha256sum -c kernel-checksums.txt
-)

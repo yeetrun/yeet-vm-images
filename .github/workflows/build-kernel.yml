@@ -220,7 +220,7 @@ jobs:
 
       - name: Prepare release notes
         run: |
-          cat >"$KERNEL_OUT_DIR/release-notes.md" <<EOF
+          cat <<EOF >"$KERNEL_OUT_DIR/release-notes.md"
           Canonical yeet Firecracker kernel.
 
           - Release: \`$KERNEL_RELEASE\`
