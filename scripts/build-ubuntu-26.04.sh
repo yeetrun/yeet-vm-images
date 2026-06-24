@@ -289,6 +289,7 @@ write_fast_rootfs_policy_files() {
 	local root="$1"
 	install -d -m 0755 \
 		"$root/etc/apt/preferences.d" \
+		"$root/etc/needrestart/conf.d" \
 		"$root/etc/sysctl.d" \
 		"$root/etc/tmpfiles.d" \
 		"$root/usr/share/doc/yeet-vm-image"
@@ -296,6 +297,12 @@ write_fast_rootfs_policy_files() {
 Package: linux-image-* linux-modules-* linux-modules-extra-* linux-headers-* linux-generic* linux-virtual* grub-* shim-signed initramfs-tools initramfs-tools-* snapd snap-confine squashfs-tools
 Pin: version *
 Pin-Priority: -1
+EOF
+	cat >"$root/etc/needrestart/conf.d/99-yeet-vm-kernel.conf" <<'EOF'
+# Yeet VM images boot a host-side Firecracker kernel from the image bundle, not
+# a guest-managed Ubuntu linux-image package. Keep needrestart service checks,
+# but skip kernel package hints that cannot apply in this guest.
+$nrconf{kernelhints} = 0;
 EOF
 	cat >"$root/usr/share/doc/yeet-vm-image/kernel.md" <<'EOF'
 # Yeet VM Kernel
@@ -399,6 +406,15 @@ validate_fast_rootfs_ubuntu_compatibility() {
 		exit 1
 	fi
 	chroot "$root" /usr/bin/rsync --version >/dev/null
+
+	if [ ! -e "$root/etc/needrestart/conf.d/99-yeet-vm-kernel.conf" ]; then
+		echo "missing yeet needrestart kernel policy" >&2
+		exit 1
+	fi
+	if ! grep -Fxq '$nrconf{kernelhints} = 0;' "$root/etc/needrestart/conf.d/99-yeet-vm-kernel.conf"; then
+		echo "needrestart kernel hints must be disabled for yeet-managed guest kernels" >&2
+		exit 1
+	fi
 }
 
 run_fast_rootfs_e2fsck() {

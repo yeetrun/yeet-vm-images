@@ -160,6 +160,8 @@ The fast profile customizes the Ubuntu rootfs before compression:
   packages;
 - writes `/etc/apt/preferences.d/99-yeet-managed-kernel` to keep those packages
   from returning during guest apt upgrades;
+- writes a `needrestart` config that disables guest kernel package hints while
+  preserving service restart checks;
 - writes `/usr/share/doc/yeet-vm-image/kernel.md` explaining that the boot
   kernel is supplied by the yeet VM image bundle and that nftables-oriented
   router kernel features are built in rather than loaded as modules;
