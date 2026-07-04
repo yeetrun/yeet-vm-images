@@ -356,6 +356,54 @@ jq -e '
   .released == "2026-06-19"
 ' <<<"$kernel_info" >/dev/null
 
+mainline_latest_kernel_info="$(
+	YEET_KERNEL_RELEASES_JSON_URL="file://$testdata_dir/kernel-releases-mainline-latest-stable.json" \
+	YEET_KERNEL_SHA256SUMS_URL="file://$testdata_dir/kernel-sha256sums-7.x.asc" \
+		"$repo_root/scripts/resolve-latest-kernel.sh"
+)"
+
+jq -e '
+  .moniker == "mainline" and
+  .version == "6.18" and
+  .source_url == "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz" and
+  .source_sha256 == "89abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567" and
+  .released == "2025-11-30"
+' <<<"$mainline_latest_kernel_info" >/dev/null
+
+fallback_source="$tmp_dir/linux-6.19.14.tar.xz"
+printf 'kernel source tarball fixture' >"$fallback_source"
+fallback_source_sha256="$(sha256sum "$fallback_source" | awk '{ print $1 }')"
+fallback_releases="$tmp_dir/kernel-releases-missing-sha256sums.json"
+jq -n --arg source_url "file://$fallback_source" '{
+  latest_stable: {
+    version: "6.19.14"
+  },
+  releases: [
+    {
+      moniker: "stable",
+      version: "6.19.14",
+      source: $source_url,
+      released: {
+        isodate: "2026-04-22"
+      },
+      iseol: false
+    }
+  ]
+}' >"$fallback_releases"
+
+fallback_kernel_info="$(
+	YEET_KERNEL_RELEASES_JSON_URL="file://$fallback_releases" \
+		"$repo_root/scripts/resolve-latest-kernel.sh"
+)"
+
+jq -e --arg source_url "file://$fallback_source" --arg source_sha256 "$fallback_source_sha256" '
+  .moniker == "stable" and
+  .version == "6.19.14" and
+  .source_url == $source_url and
+  .source_sha256 == $source_sha256 and
+  .released == "2026-04-22"
+' <<<"$fallback_kernel_info" >/dev/null
+
 ubuntu_version="$("$repo_root/scripts/next-image-version.sh" ubuntu-26.04-amd64 7.1.2 "$testdata_dir/image-release-tags.txt")"
 jq -e '
   .family == "ubuntu-26.04-amd64" and

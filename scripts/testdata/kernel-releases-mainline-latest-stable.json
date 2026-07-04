@@ -1,0 +1,25 @@
+{
+  "latest_stable": {
+    "version": "6.18"
+  },
+  "releases": [
+    {
+      "moniker": "mainline",
+      "version": "6.18",
+      "source": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.tar.xz",
+      "released": {
+        "isodate": "2025-11-30"
+      },
+      "iseol": false
+    },
+    {
+      "moniker": "stable",
+      "version": "6.19.14",
+      "source": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.19.14.tar.xz",
+      "released": {
+        "isodate": "2026-04-22"
+      },
+      "iseol": false
+    }
+  ]
+}

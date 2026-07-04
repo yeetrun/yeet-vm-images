@@ -10,7 +10,7 @@ require() {
 	fi
 }
 
-for cmd in awk basename curl dirname jq; do
+for cmd in awk basename curl dirname jq sha256sum; do
 	require "$cmd"
 done
 
@@ -26,7 +26,6 @@ release_json="$(
 	  [
 	    .releases[]
 	    | select(
-	        .moniker == "stable" and
 	        .version == $version and
 	        .iseol == false
 	      )
@@ -35,7 +34,7 @@ release_json="$(
 	' <<<"$releases_json"
 )"
 if [ -z "$release_json" ]; then
-	echo "could not find non-EOL stable release for kernel $latest_stable" >&2
+	echo "could not find non-EOL release for kernel $latest_stable" >&2
 	exit 1
 fi
 
@@ -54,10 +53,15 @@ fi
 
 source_name="$(basename "$source_url")"
 sha256sums_url="${YEET_KERNEL_SHA256SUMS_URL:-$(dirname "$source_url")/sha256sums.asc}"
-source_sha256="$(
-	curl -fsSL --retry 3 "$sha256sums_url" |
-		awk -v source_name="$source_name" '($2 == source_name || $2 == "*" source_name) && !found { print $1; found = 1 }'
-)"
+source_sha256=""
+if sha256sums="$(curl -fsSL --retry 3 "$sha256sums_url" 2>/dev/null)"; then
+	source_sha256="$(
+		awk -v source_name="$source_name" '($2 == source_name || $2 == "*" source_name) && !found { print $1; found = 1 }' <<<"$sha256sums"
+	)"
+fi
+if [ -z "$source_sha256" ]; then
+	source_sha256="$(curl -fsSL --retry 3 "$source_url" | sha256sum | awk '{ print $1 }')"
+fi
 if [ -z "$source_sha256" ]; then
 	echo "could not find checksum for $source_name in $sha256sums_url" >&2
 	exit 1
