@@ -69,7 +69,9 @@ data-only selector under `/etc/yeet-vm/kernel/selected.json`. Package metadata
 is published from the canonical kernel release, so apt and Nix URLs point at the
 same source kernel artifacts used by the image workflows.
 
-Ubuntu guests can add the apt source and install or upgrade the package:
+Ubuntu images include the apt source by default, so `sudo apt update` checks the
+yeet VM kernel package repository automatically. Older images can be updated in
+place with the same source configuration:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -80,7 +82,8 @@ sudo apt update
 sudo apt install yeet-vm-kernel
 ```
 
-NixOS guests use the yeet kernel package flake from this repository:
+NixOS images include and enable the yeet kernel package flake by default. Custom
+NixOS guests can use the same flake from this repository:
 
 ```nix
 {

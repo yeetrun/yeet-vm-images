@@ -35,6 +35,8 @@ firecracker_arch="${FIRECRACKER_ARCH:-x86_64}"
 firecracker_tgz="firecracker-${firecracker_version}-${firecracker_arch}.tgz"
 firecracker_url="${FIRECRACKER_URL:-https://github.com/firecracker-microvm/firecracker/releases/download/${firecracker_version}/${firecracker_tgz}}"
 zstd_level="${ZSTD_LEVEL:-10}"
+yeet_vm_kernel_apt_uri="${YEET_VM_KERNEL_APT_URI:-https://yeetrun.github.io/yeet-vm-images/apt}"
+yeet_vm_kernel_apt_keyring_url="${YEET_VM_KERNEL_APT_KEYRING_URL:-${yeet_vm_kernel_apt_uri}/yeet-vm-kernel-archive-keyring.gpg}"
 
 image_revision_from_version() {
 	local version="$1"
@@ -288,11 +290,23 @@ fi
 write_fast_rootfs_policy_files() {
 	local root="$1"
 	install -d -m 0755 \
+		"$root/etc/apt/keyrings" \
 		"$root/etc/apt/preferences.d" \
+		"$root/etc/apt/sources.list.d" \
 		"$root/etc/needrestart/conf.d" \
 		"$root/etc/sysctl.d" \
 		"$root/etc/tmpfiles.d" \
 		"$root/usr/share/doc/yeet-vm-image"
+	curl -fsSL --retry 3 -o "$root/etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg" "$yeet_vm_kernel_apt_keyring_url"
+	chmod 0644 "$root/etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg"
+	cat >"$root/etc/apt/sources.list.d/yeet-vm-kernel.sources" <<EOF
+Types: deb
+URIs: $yeet_vm_kernel_apt_uri
+Suites: stable
+Components: main
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg
+EOF
 	cat >"$root/etc/apt/preferences.d/99-yeet-managed-kernel" <<'EOF'
 Package: linux-image-* linux-modules-* linux-modules-extra-* linux-headers-* linux-generic* linux-virtual* grub-* shim-signed initramfs-tools initramfs-tools-* snapd snap-confine squashfs-tools
 Pin: version *
@@ -413,6 +427,19 @@ validate_fast_rootfs_ubuntu_compatibility() {
 	fi
 	if ! grep -Fxq '$nrconf{kernelhints} = 0;' "$root/etc/needrestart/conf.d/99-yeet-vm-kernel.conf"; then
 		echo "needrestart kernel hints must be disabled for yeet-managed guest kernels" >&2
+		exit 1
+	fi
+
+	if [ ! -s "$root/etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg" ]; then
+		echo "missing yeet VM kernel apt keyring" >&2
+		exit 1
+	fi
+	if [ ! -e "$root/etc/apt/sources.list.d/yeet-vm-kernel.sources" ]; then
+		echo "missing yeet VM kernel apt source" >&2
+		exit 1
+	fi
+	if ! grep -Fxq "URIs: $yeet_vm_kernel_apt_uri" "$root/etc/apt/sources.list.d/yeet-vm-kernel.sources"; then
+		echo "yeet VM kernel apt source must use $yeet_vm_kernel_apt_uri" >&2
 		exit 1
 	fi
 }

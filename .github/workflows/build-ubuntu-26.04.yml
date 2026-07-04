@@ -375,6 +375,8 @@ jobs:
           debugfs -R 'stat /usr/local/lib/yeet-vm/yeet-agent' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/systemd/system/yeet-agent.service' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /usr/share/doc/yeet-vm-image/init.md' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
+          debugfs -R 'stat /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
+          debugfs -R 'stat /etc/apt/sources.list.d/yeet-vm-kernel.sources' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/needrestart/conf.d/99-yeet-vm-kernel.conf' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/terminfo/x/xterm-ghostty' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/sysctl.d/99-yeet-vm-router.conf' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
@@ -512,6 +514,12 @@ jobs:
           assert_symlink_target /etc/systemd/system/multi-user.target.wants/yeet-agent.service ../yeet-agent.service
           debugfs_cat /etc/systemd/system/yeet-agent.service | grep -q '^ExecStart=/usr/local/lib/yeet-vm/yeet-agent$'
           debugfs_cat /etc/systemd/system/yeet-agent.service | grep -q '^Restart=always$'
+          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Types: deb$'
+          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^URIs: https://yeetrun.github.io/yeet-vm-images/apt$'
+          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Suites: stable$'
+          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Components: main$'
+          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Architectures: amd64$'
+          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Signed-By: /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg$'
           debugfs_cat /etc/needrestart/conf.d/99-yeet-vm-kernel.conf | grep -q '^\$nrconf{kernelhints} = 0;$'
           debugfs_cat /etc/sysctl.d/99-yeet-vm-router.conf | grep -q '^net.ipv4.ip_forward = 1$'
           debugfs_cat /etc/sysctl.d/99-yeet-vm-router.conf | grep -q '^net.ipv6.conf.all.forwarding = 1$'
