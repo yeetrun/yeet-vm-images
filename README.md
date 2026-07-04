@@ -64,14 +64,15 @@ payloads remain stable.
 ## Guest Kernel Packages
 
 The package source workflow publishes the same yeet-managed kernel artifacts as
-guest-consumable package sources. Package installation is opt-in and writes a
-data-only selector under `/etc/yeet-vm/kernel/selected.json`. Package metadata
-is published from the canonical kernel release, so apt and Nix URLs point at the
+guest-consumable package sources. Installing the package writes a data-only
+selector under `/etc/yeet-vm/kernel/selected.json`. Package metadata is
+published from the canonical kernel release, so apt and Nix URLs point at the
 same source kernel artifacts used by the image workflows.
 
-Ubuntu images include the apt source by default, so `sudo apt update` checks the
-yeet VM kernel package repository automatically. Older images can be updated in
-place with the same source configuration:
+Ubuntu images include the apt source and install `yeet-vm-kernel` by default, so
+`sudo apt update && sudo apt upgrade` checks the yeet VM kernel package
+repository automatically. Older images can be updated in place with the same
+source configuration:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings

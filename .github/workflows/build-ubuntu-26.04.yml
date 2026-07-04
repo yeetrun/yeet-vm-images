@@ -377,6 +377,7 @@ jobs:
           debugfs -R 'stat /usr/share/doc/yeet-vm-image/init.md' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/apt/sources.list.d/yeet-vm-kernel.sources' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
+          debugfs -R 'stat /etc/yeet-vm/kernel/selected.json' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/needrestart/conf.d/99-yeet-vm-kernel.conf' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/terminfo/x/xterm-ghostty' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           debugfs -R 'stat /etc/sysctl.d/99-yeet-vm-router.conf' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
@@ -463,6 +464,7 @@ jobs:
           }
           assert_package_installed iptables
           assert_package_installed nftables
+          assert_package_installed yeet-vm-kernel
           assert_package_not_installed netplan.io
           assert_package_not_installed networkd-dispatcher
           assert_package_not_installed chrony
@@ -520,6 +522,19 @@ jobs:
           debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Components: main$'
           debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Architectures: amd64$'
           debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Signed-By: /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg$'
+          debugfs_cat /var/lib/dpkg/status | awk '
+            $1 == "Package:" { package = $2 }
+            $1 == "Version:" && package == "yeet-vm-kernel" { version = $2 }
+            END { exit version == ENVIRON["YEET_KERNEL_VERSION"] ? 0 : 1 }
+          '
+          debugfs_cat /etc/yeet-vm/kernel/selected.json | jq -e --arg version "linux-${YEET_KERNEL_VERSION}-yeet" '
+            .schema_version == 1 and
+            .version == $version and
+            .kernel == ("/usr/lib/yeet-vm/kernels/" + $version + "/vmlinux") and
+            .kernel_config == ("/usr/lib/yeet-vm/kernels/" + $version + "/kernel.config") and
+            (.sha256.vmlinux | test("^[0-9a-f]{64}$")) and
+            (.sha256["kernel.config"] | test("^[0-9a-f]{64}$"))
+          '
           debugfs_cat /etc/needrestart/conf.d/99-yeet-vm-kernel.conf | grep -q '^\$nrconf{kernelhints} = 0;$'
           debugfs_cat /etc/sysctl.d/99-yeet-vm-router.conf | grep -q '^net.ipv4.ip_forward = 1$'
           debugfs_cat /etc/sysctl.d/99-yeet-vm-router.conf | grep -q '^net.ipv6.conf.all.forwarding = 1$'

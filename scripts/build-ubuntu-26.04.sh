@@ -442,6 +442,24 @@ validate_fast_rootfs_ubuntu_compatibility() {
 		echo "yeet VM kernel apt source must use $yeet_vm_kernel_apt_uri" >&2
 		exit 1
 	fi
+
+	local expected_kernel_package_version
+	expected_kernel_package_version="${kernel_version#linux-}"
+	expected_kernel_package_version="${expected_kernel_package_version%-yeet}"
+	local installed_kernel_package_version
+	installed_kernel_package_version="$(chroot "$root" /usr/bin/dpkg-query -W -f='${Version}' yeet-vm-kernel 2>/dev/null || true)"
+	if [ "$installed_kernel_package_version" != "$expected_kernel_package_version" ]; then
+		echo "yeet-vm-kernel package version mismatch: installed=${installed_kernel_package_version:-missing} expected=$expected_kernel_package_version" >&2
+		exit 1
+	fi
+	if [ ! -s "$root/etc/yeet-vm/kernel/selected.json" ]; then
+		echo "missing yeet VM selected kernel metadata" >&2
+		exit 1
+	fi
+	if ! grep -Fq '"version": "'"$kernel_version"'"' "$root/etc/yeet-vm/kernel/selected.json"; then
+		echo "selected kernel metadata must reference $kernel_version" >&2
+		exit 1
+	fi
 }
 
 run_fast_rootfs_e2fsck() {
@@ -532,7 +550,7 @@ if [ -n "$packages" ]; then
 	apt-get purge -y $packages
 fi
 apt-get update
-apt-get install -y --no-install-recommends iptables nftables rsync
+apt-get install -y --no-install-recommends iptables nftables rsync yeet-vm-kernel
 apt-get autoremove -y --purge
 apt-get clean
 rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /var/cache/snapd/* /var/lib/snapd/cache/*
