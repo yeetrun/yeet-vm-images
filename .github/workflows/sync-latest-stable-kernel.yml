@@ -97,6 +97,22 @@ jobs:
             ' "$manifest"
           }
 
+          reject_kernel_downgrade() {
+            local image="$1"
+            local current_kernel="$2"
+            local comparison
+
+            if [ -z "$current_kernel" ]; then
+              return 0
+            fi
+
+            comparison="$(scripts/compare-kernel-versions.sh "$KERNEL_VERSION" "$current_kernel")"
+            if [ "$comparison" = "-1" ]; then
+              echo "::error title=Kernel downgrade detected::$image latest manifest uses upstream kernel $current_kernel, but kernel.org resolved $KERNEL_VERSION. Refusing to publish a downgrade."
+              exit 1
+            fi
+          }
+
           should_build() {
             local current_kernel="$1"
             if [ "$FORCE" = "true" ] || [ "$current_kernel" != "$KERNEL_VERSION" ]; then
@@ -119,6 +135,8 @@ jobs:
 
           ubuntu_current_kernel="$(current_upstream_kernel "$RUNNER_TEMP/ubuntu-latest-manifest.json")"
           nixos_current_kernel="$(current_upstream_kernel "$RUNNER_TEMP/nixos-latest-manifest.json")"
+          reject_kernel_downgrade "Ubuntu 26.04 amd64" "$ubuntu_current_kernel"
+          reject_kernel_downgrade "NixOS 26.05 amd64" "$nixos_current_kernel"
           ubuntu_build="$(should_build "$ubuntu_current_kernel")"
           nixos_build="$(should_build "$nixos_current_kernel")"
 

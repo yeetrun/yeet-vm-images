@@ -342,6 +342,27 @@ run_catalog_provenance_case "mismatched kernel_source_url" ", \"upstream_kernel_
 run_catalog_provenance_case "malformed kernel_source_sha256" ", \"kernel_source_sha256\": \"not-a-sha256\"" "fail"
 run_catalog_provenance_case "present-null kernel_source_sha256" ", \"kernel_source_sha256\": null" "fail"
 
+assert_kernel_version_compare() {
+	left="$1"
+	right="$2"
+	expected="$3"
+
+	if ! actual="$("$repo_root/scripts/compare-kernel-versions.sh" "$left" "$right")"; then
+		echo "compare-kernel-versions.sh failed for $left vs $right" >&2
+		exit 1
+	fi
+	if [ "$actual" != "$expected" ]; then
+		echo "compare-kernel-versions.sh expected $expected for $left vs $right but got $actual" >&2
+		exit 1
+	fi
+}
+
+assert_kernel_version_compare 7.1.2 6.19.14 1
+assert_kernel_version_compare 6.19.14 7.1.2 -1
+assert_kernel_version_compare 6.19.14 6.19.2 1
+assert_kernel_version_compare 6.19 6.19.0 0
+assert_kernel_version_compare 6.18.37 6.19 -1
+
 kernel_info="$(
 	YEET_KERNEL_RELEASES_JSON_URL="file://$testdata_dir/kernel-releases-7.1.1.json" \
 	YEET_KERNEL_SHA256SUMS_URL="file://$testdata_dir/kernel-sha256sums-7.x.asc" \
