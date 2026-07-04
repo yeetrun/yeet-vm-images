@@ -236,7 +236,27 @@ normalize_rootfs_ext4_features() {
 	fi
 }
 
+validate_rootfs_free_space() {
+	local rootfs="$1"
+	local free_blocks
+	local block_size
+	local free_mib
+
+	free_blocks="$(dumpe2fs -h "$rootfs" 2>/dev/null | awk -F: '/Free blocks/ { gsub(/[[:space:]]/, "", $2); print $2; exit }')"
+	block_size="$(dumpe2fs -h "$rootfs" 2>/dev/null | awk -F: '/Block size/ { gsub(/[[:space:]]/, "", $2); print $2; exit }')"
+	if [ -z "$free_blocks" ] || [ -z "$block_size" ]; then
+		echo "could not inspect NixOS rootfs free space" >&2
+		exit 1
+	fi
+	free_mib=$((free_blocks * block_size / 1024 / 1024))
+	if [ "$free_mib" -lt 256 ]; then
+		echo "NixOS rootfs must have at least 256 MiB free before first boot activation, got ${free_mib} MiB" >&2
+		exit 1
+	fi
+}
+
 normalize_rootfs_ext4_features "$out_dir/rootfs.ext4"
+validate_rootfs_free_space "$out_dir/rootfs.ext4"
 
 echo "Downloading Firecracker $firecracker_version..."
 curl -fL --retry 3 -o "$work_dir/$firecracker_tgz" "$firecracker_url"

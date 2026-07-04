@@ -376,6 +376,17 @@ jobs:
             echo "rootfs ext4 features are not compatible with common LTS host tooling: $rootfs_features" >&2
             exit 1
           fi
+          rootfs_free_blocks="$(dumpe2fs -h "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F: '/Free blocks/ { gsub(/[[:space:]]/, "", $2); print $2; exit }')"
+          rootfs_block_size="$(dumpe2fs -h "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F: '/Block size/ { gsub(/[[:space:]]/, "", $2); print $2; exit }')"
+          if [ -z "$rootfs_free_blocks" ] || [ -z "$rootfs_block_size" ]; then
+            echo "could not inspect NixOS rootfs free space" >&2
+            exit 1
+          fi
+          rootfs_free_mib=$((rootfs_free_blocks * rootfs_block_size / 1024 / 1024))
+          if [ "$rootfs_free_mib" -lt 256 ]; then
+            echo "NixOS rootfs must have at least 256 MiB free before first boot activation, got ${rootfs_free_mib} MiB" >&2
+            exit 1
+          fi
           debugfs_path_exists() {
             local path="$1"
             local output

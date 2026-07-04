@@ -69,6 +69,7 @@
           ;
         compressImage = false;
         inodeHeadroomPercent = 25;
+        postMinimizeHeadroomMiB = 512;
         storePaths = [
           nixosSystem.config.system.build.toplevel
           yeetInit

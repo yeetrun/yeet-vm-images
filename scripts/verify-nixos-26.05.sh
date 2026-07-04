@@ -141,6 +141,22 @@ grep -Fq 'mkfs.ext4 -N $mkfsInodes' "$repo_root/nix/make-ext4-rootfs.nix" || {
 	echo "NixOS ext4 builder must request explicit mkfs inode headroom" >&2
 	exit 1
 }
+grep -Fq 'postMinimizeHeadroomMiB ? 512' "$repo_root/nix/make-ext4-rootfs.nix" || {
+	echo "NixOS ext4 builder must retain writable post-minimize headroom" >&2
+	exit 1
+}
+grep -Fq 'postMinimizeHeadroomMiB = 512;' "$repo_root/flake.nix" || {
+	echo "NixOS rootfs must keep first-boot activation headroom" >&2
+	exit 1
+}
+grep -Fq 'NixOS rootfs must have at least 256 MiB free before first boot activation' "$repo_root/scripts/build-nixos-26.05.sh" || {
+	echo "NixOS build script must validate first-boot activation headroom" >&2
+	exit 1
+}
+grep -Fq 'NixOS rootfs must have at least 256 MiB free before first boot activation' "$repo_root/.github/workflows/build-nixos-26.05.yml" || {
+	echo "NixOS workflow must validate first-boot activation headroom" >&2
+	exit 1
+}
 for install_path in \
 	'install -m 0644 ${nixos-guest-config}/README.md ./files/etc/nixos/README.md' \
 	'install -m 0644 ${nixos-guest-config}/flake.nix ./files/etc/nixos/flake.nix' \
