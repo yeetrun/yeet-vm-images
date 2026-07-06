@@ -1,13 +1,21 @@
 # Yeet VM Images
 
-This repository builds and publishes official yeet VM image bundles.
+This repository builds and publishes the official VM image bundles for Yeet.
+The Yeet runtime is maintained in
+[yeetrun/yeet](https://github.com/yeetrun/yeet), and the public site is
+[yeetrun.com](https://yeetrun.com).
 
-Official payloads:
+The runtime repository owns the CLI, catch, service lifecycle, and the guest
+binaries `yeet-init` and `yeet-agent`. This repository owns the bootable VM
+payloads that catch resolves, downloads, verifies, and starts with
+Firecracker.
+
+Official payload families:
 
 - `vm://ubuntu/26.04`
 - `vm://nixos/26.05`
 
-Each bundle includes:
+Each published bundle includes:
 
 - `manifest.json`
 - `vmlinux`
@@ -16,372 +24,160 @@ Each bundle includes:
 - `kernel.config`
 - `checksums.txt`
 
-Ubuntu publishes both immutable version releases and a stable latest alias:
+The stable latest manifest URLs are the catch-facing entry points:
 
-`https://github.com/yeetrun/yeet-vm-images/releases/download/ubuntu-26.04-amd64-latest/manifest.json`
+- Ubuntu:
+  `https://github.com/yeetrun/yeet-vm-images/releases/download/ubuntu-26.04-amd64-latest/manifest.json`
+- NixOS:
+  `https://github.com/yeetrun/yeet-vm-images/releases/download/nixos-26.05-amd64-latest/manifest.json`
 
-NixOS publishes both immutable version releases and a stable latest alias:
+`catalog.json` maps official `vm://...` payload families to latest manifest
+URLs. Publishing a new image version updates the immutable release and the
+matching `*-latest` release. The catalog only changes when a family is added,
+renamed, or intentionally redirected.
 
-`https://github.com/yeetrun/yeet-vm-images/releases/download/nixos-26.05-amd64-latest/manifest.json`
+## How Yeet Uses These Images
 
-`catalog.json` is the source of truth for official VM image families. It maps
-payloads such as `vm://ubuntu/26.04` to stable latest manifest URLs. Publishing
-a new image version only updates the immutable release and the matching
-`*-latest` release; edit `catalog.json` only when adding or changing a family.
+When a user asks Yeet for an official VM payload, catch resolves the payload
+through `catalog.json`, reads the manifest, verifies checksums, downloads the
+rootfs, kernel, and Firecracker binary, and boots the guest with Firecracker
+direct kernel boot.
 
-## Canonical Kernel Releases
+Inside the guest:
 
-Each yeet-managed Linux kernel is built once as an immutable canonical kernel
-release, such as `kernel-linux-7.1.1-yeet-v1`. That release owns the kernel
-assets shared by image and package workflows:
+- `yeet-init` runs before systemd and handles yeet-specific readiness.
+- `yeet-agent` exposes live guest network state over Firecracker vsock.
+- `/etc/yeet-vm` carries yeet-owned metadata such as hostname, SSH keys,
+  and network snippets.
+- Ubuntu and NixOS keep their normal package manager and rebuild behavior.
+
+The image build uses guest binaries from `yeetrun/yeet`; workflows pin that
+source with `yeet_ref`.
+
+## Image Policy
+
+These images are tuned for fast microVM startup while keeping Ubuntu and NixOS
+distribution behavior intact.
+
+For performance and size:
+
+- yeet kernels boot directly under Firecracker without an initrd;
+- Ubuntu images remove distro kernel, module, bootloader, initramfs, snap, and
+  unused server-image packages;
+- boot-time services that do not help a yeet VM reach readiness are removed or
+  masked;
+- rootfs images are compressed as `rootfs.ext4.zst`.
+
+For compatibility:
+
+- Ubuntu package-owned paths stay intact, including `/usr/sbin`;
+- Ubuntu package upgrades should not reinstall a distro kernel path that the VM
+  will not boot;
+- NixOS images ship a normal flake-first `/etc/nixos` that users can inspect
+  and rebuild with `nixos-rebuild`;
+- yeet-owned metadata stays data-only under `/etc/yeet-vm`.
+
+For guest functionality:
+
+- `yeet-agent` is enabled so catch can query current guest network state;
+- `/dev/net/tun`, forwarding, nftables, iptables, and rsync support are present
+  for common router, tunnel, and file-copy workflows.
+
+## Terminal Terminfo
+
+Some terminals publish TERM values that base distribution images may not know
+yet. Ghostty uses `xterm-ghostty`; official images embed the matching terminfo
+entry for convenience from `assets/xterm-ghostty.terminfo`.
+
+## Yeet Kernel
+
+The images boot a yeet-managed Linux kernel instead of the distribution kernel.
+It is built for Firecracker direct kernel boot, so the VM does not need an
+initrd. The config starts from Firecracker's microVM kernel baseline and adds
+the features yeet images need for guest networking, router-style workloads,
+file sync, and in-guest Nix builds.
+
+Each upstream kernel version is published once as a canonical kernel release,
+for example `kernel-linux-<version>-yeet-v<N>`. A canonical kernel release
+contains:
 
 - `vmlinux`
 - `kernel.config`
 - `kernel-manifest.json`
 - `kernel-checksums.txt`
 
-Ubuntu and NixOS image workflows accept an optional `kernel_release` input. When
-it is present, the workflow downloads and verifies those canonical assets. When
-it is empty, the workflow builds the kernel locally as the manual fallback.
+Image workflows consume those canonical assets. Image bundles still include
+`vmlinux`, `kernel.config`, and checksums so each bundle remains
+self-contained for catch.
 
-OS image bundles still include `vmlinux`, `kernel.config`, and checksums so
-catch can consume each published bundle as a self-contained VM payload.
+The `Sync latest stable Linux kernel VM images` workflow runs daily and can be
+manually dispatched. It checks kernel.org latest stable metadata, compares the
+Ubuntu and NixOS latest manifests, resolves or publishes the needed canonical
+kernel release, publishes package metadata from that same release, then builds
+only stale image families.
 
-## Automatic Kernel Refresh
+Image versions use hybrid tags such as
+`ubuntu-26.04-amd64-kernel-<kernel>-v<N>`. The kernel segment records the
+kernel line; the final `v<N>` is the per-family image revision.
 
-The `Sync latest stable Linux kernel VM images` workflow runs daily and can
-also be manually dispatched. It reads kernel.org latest stable metadata,
-compares the Ubuntu and NixOS latest manifests, and only builds stale families.
-When a kernel update is needed, it resolves or publishes the canonical kernel
-release first, then passes that release to package and image workflows.
+The package workflow publishes the same canonical kernel release through
+distro-native package metadata:
 
-Immutable versions use hybrid tags, such as
-`ubuntu-26.04-amd64-kernel-7.1.1-v16`. The final `v<N>` remains the per-family
-image revision, which allows revving image, rootfs, Firecracker, or guest
-tooling changes without changing kernel. `*-latest` aliases and catalog
-payloads remain stable.
+- Ubuntu apt repository:
+  `https://yeetrun.github.io/yeet-vm-images/apt`
+- NixOS flake metadata under `kernel-packages/metadata.nix`
 
-## Guest Kernel Packages
+Ubuntu images include the yeet apt source and install `yeet-vm-kernel` by
+default. NixOS images include and enable the yeet kernel package flake by
+default. Image bundles, apt metadata, and Nix metadata all track the same
+canonical kernel assets.
 
-The package source workflow publishes the same yeet-managed kernel artifacts as
-guest-consumable package sources. Installing the package writes a data-only
-selector under `/etc/yeet-vm/kernel/selected.json`. Package metadata is
-published from the canonical kernel release, so apt and Nix URLs point at the
-same source kernel artifacts used by the image workflows.
+## Image Families
 
-Ubuntu images include the apt source and install `yeet-vm-kernel` by default, so
-`sudo apt update && sudo apt upgrade` checks the yeet VM kernel package
-repository automatically. Older images can be updated in place with the same
-source configuration:
+### Ubuntu 26.04
 
-```bash
-sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsSL https://yeetrun.github.io/yeet-vm-images/apt/yeet-vm-kernel-archive-keyring.gpg | sudo tee /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg >/dev/null
-sudo chmod 0644 /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg
-printf 'Types: deb\nURIs: https://yeetrun.github.io/yeet-vm-images/apt\nSuites: stable\nComponents: main\nArchitectures: amd64\nSigned-By: /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg\n' | sudo tee /etc/apt/sources.list.d/yeet-vm-kernel.sources
-sudo apt update
-sudo apt install yeet-vm-kernel
-```
+The Ubuntu image starts from the official Ubuntu 26.04 cloud image and applies
+the yeet fast profile. It boots a yeet-managed Firecracker kernel, uses
+`yeet-init` before systemd, enables `yeet-agent`, and omits `initrd.img`.
 
-NixOS images include and enable the yeet kernel package flake by default. Custom
-NixOS guests can use the same flake from this repository:
+The fast profile keeps Ubuntu package behavior intact while removing packages
+and services that do not contribute to yeet VM startup. It also installs the
+yeet kernel apt source by default, keeps networking and firewall userspace
+available, preserves common host-tool-compatible ext4 features, and masks snapd
+because the fast image intentionally does not support snaps.
 
-```nix
-{
-  inputs.yeet-vm-kernel.url = "github:yeetrun/yeet-vm-images?dir=kernel-packages";
-}
-```
+### NixOS 26.05
 
-```nix
-{
-  imports = [ inputs.yeet-vm-kernel.nixosModules.default ];
-  services.yeetVmKernel.enable = true;
-}
-```
-
-Fresh yeet NixOS images already enable that module through their shipped flake.
-To update the selected kernel inside a NixOS guest:
-
-```bash
-cd /etc/nixos
-sudo nix flake update
-sudo nixos-rebuild switch --flake .#yeet-vm
-sudo reboot
-```
-
-The guest package or rebuild only selects the desired kernel under
-`/etc/yeet-vm/kernel/selected.json`. Firecracker still boots from a host-side
-kernel path, so catch syncs the selected kernel at the guest reboot boundary
-before starting the next Firecracker process. The fallback operator command is:
-
-```bash
-yeet vm kernel sync <service-name> --restart
-```
-
-## Ubuntu 26.04
-
-The Ubuntu family is built from the official Ubuntu 26.04 cloud image, boots a
-yeet-managed kernel under Firecracker direct kernel boot, uses
-`/usr/local/lib/yeet-vm/yeet-init` as the pre-systemd init shim, includes
-`yeet-agent` for live vsock network state queries, and omits `initrd.img`.
-
-### Fast Profile
-
-The default Ubuntu build profile is `fast`. It requires a kernel that already
-has the Firecracker boot path built in. The kernel builder pins the
-Firecracker microVM config revision used by yeet's no-initrd direct-boot image
-and enables kernel IP autoconfiguration for the first VM interface. It also
-builds in TUN, IPv6, seccomp, netfilter, conntrack, conntrack marks, nftables,
-nft NAT/masquerade, and the nft compatibility support needed by Ubuntu's
-`iptables-nft` userspace so guest-installed router software and in-guest Nix
-builds have the kernel features they need without depending on loadable kernel
-modules. The kernel still enables module-loader support so distro activation
-paths that manage `/proc/sys/kernel/modprobe` keep working normally:
-
-```bash
-scripts/build-linux-kernel.sh dist/kernel-linux-7.0
-cd ../yeet
-mise run guest:init:build
-mise run guest:agent:build
-cd ../yeet-vm-images
-sudo YEET_VM_KERNEL_PATH="$PWD/dist/kernel-linux-7.0/vmlinux" \
-  YEET_VM_KERNEL_VERSION=linux-7.0-yeet \
-  YEET_VM_INIT_PATH="$PWD/../yeet/guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init" \
-  YEET_VM_AGENT_PATH="$PWD/../yeet/guest/yeet-agent/target/x86_64-unknown-linux-musl/release/yeet-agent" \
-  scripts/build-ubuntu-26.04.sh
-```
-
-This local build path is the manual fallback used when no `kernel_release` is
-supplied. Set `kernel_release` in the workflow to consume verified canonical
-kernel assets instead.
-
-The Ubuntu builder uses `assets/xterm-ghostty.terminfo` by default. Set
-`YEET_VM_GHOSTTY_TERMINFO` only when testing a different terminfo source.
-
-The fast profile customizes the Ubuntu rootfs before compression:
-
-- purges Ubuntu kernel, module, header, bootloader, initramfs, and snap
-  packages;
-- writes `/etc/apt/preferences.d/99-yeet-managed-kernel` to keep those packages
-  from returning during guest apt upgrades;
-- writes a `needrestart` config that disables guest kernel package hints while
-  preserving service restart checks;
-- writes `/usr/share/doc/yeet-vm-image/kernel.md` explaining that the boot
-  kernel is supplied by the yeet VM image bundle and that nftables-oriented
-  router kernel features are built in rather than loaded as modules;
-- writes `/usr/share/doc/yeet-vm-image/init.md` explaining the pre-systemd
-  `yeet-init` path and readiness flow;
-- installs the Rust `yeet-init` binary into `/usr/local/lib/yeet-vm/yeet-init`;
-- installs `/usr/local/lib/yeet-vm/yeet-agent` and enables
-  `yeet-agent.service` so catch can query current guest network state over
-  Firecracker vsock;
-- compiles Ghostty's `xterm-ghostty` terminfo into `/etc/terminfo` so terminal
-  applications recognize that TERM value out of the box;
-- keeps `iptables`, `nftables`, and `rsync` userspace tools installed for
-  guest-managed firewalls, routers, and `yeet copy` guest file sync. On Ubuntu,
-  the default `iptables` command uses the nftables backend;
-- writes `/etc/sysctl.d/99-yeet-vm-router.conf` with IPv4 and IPv6 forwarding
-  enabled;
-- writes `/etc/tmpfiles.d/yeet-vm-tun.conf` so `/dev/net/tun` is present for
-  guest-managed tunneling software;
-- enables kernel IP autoconfiguration for the first VM interface;
-- uses systemd-networkd and `yeet-sshd.service` instead of netplan and the
-  stock `ssh.service` for VM readiness;
-- purges cloud-init, pollinate, fwupd, update-notifier, xfsprogs, netplan,
-  networkd-dispatcher, chrony, sysstat, plymouth, console keyboard setup, and
-  other server-image services that do not contribute to yeet VM boot;
-- masks residual boot units for netplan, networkd-dispatcher, sysstat,
-  e2scrub, XFS scrub, fwupd refresh, update notifier, binfmt_misc, ldconfig,
-  keyboard setup, plymouth, module loading, and background maintenance timers;
-- preserves Ubuntu package-owned filesystem paths such as `/usr/sbin` so normal
-  Ubuntu packages and alternatives keep working inside yeet VMs;
-- normalizes the root filesystem to a conservative ext4 feature set so common
-  LTS host tooling can check, resize, and mount VM disks during provisioning;
-- masks snapd units because the fast image intentionally does not support
-  snaps.
-
-The fast profile does not preinstall Tailscale or any other overlay network
-agent. Users can install and manage those services inside the VM using normal
-Ubuntu packages.
-
-### Stock Profile
-
-For debugging or reproducing the old v1-style image, use the stock profile:
-
-```bash
-YEET_VM_IMAGE_PROFILE=stock \
-  YEET_VM_IMAGE_VERSION=ubuntu-26.04-amd64-v1 \
-  scripts/build-ubuntu-26.04.sh
-```
-
-The stock profile extracts Ubuntu's generic kernel from the cloud image and
-includes `initrd.img`. It does not apply the yeet-managed kernel or no-snap
-rootfs policy.
-
-## NixOS 26.05
-
-The NixOS bundle is built from a flake-pinned `nixpkgs` input using NixOS
+The NixOS image is built from a flake-pinned `nixpkgs` input using NixOS
 modules. It boots the same yeet-managed Firecracker kernel and uses the same
-Rust `yeet-init` pre-systemd shim as Ubuntu, but the guest operating system is
-configured through normal NixOS declarations.
+`yeet-init` and `yeet-agent` guest integration as Ubuntu.
 
-NixOS image metadata:
+The shipped `/etc/nixos` remains a normal NixOS configuration:
+`flake.nix`, `flake.lock`, `system.nix`, and `yeet/vm.nix` are present in the
+guest, and users can rebuild with `nixos-rebuild switch --flake .#yeet-vm`.
+The yeet module handles VM metadata, SSH key lookup, network snippet import,
+rootfs growth, guest readiness, and the default yeet kernel package source.
 
-- `default_user`: `nixos`
-- `metadata_driver`: `nixos`
-- `guest_init`: `/usr/local/lib/yeet-vm/yeet-init`
-- `guest_agent`: `/usr/local/lib/yeet-vm/yeet-agent`
-- `guest_system_init`: `/run/current-system/init`
+## Publishing
 
-The NixOS module:
+Publishing is workflow-driven:
 
-- keeps `/etc/nixos/flake.nix`, `/etc/nixos/flake.lock`,
-  `/etc/nixos/system.nix`, and `/etc/nixos/yeet/vm.nix` in the guest so users
-  can inspect and rebuild the system normally with
-  `sudo nixos-rebuild switch --flake /etc/nixos#yeet-vm` or, from
-  `/etc/nixos`, `sudo nixos-rebuild switch --flake .#yeet-vm`;
-- enables the yeet VM kernel selector by default through
-  `services.yeetVmKernel.enable = true`, writing
-  `/etc/yeet-vm/kernel/selected.json` for catch to sync at the next guest
-  reboot boundary;
-- uses systemd-networkd and copies yeet-provided network snippets from
-  `/etc/yeet-vm/systemd-network` into `/run/systemd/network` at boot;
-- uses `/etc/nixos/system.nix` as the durable VM hostname source after yeet
-  seeds it during provisioning, falling back to `/etc/yeet-vm/hostname` for
-  unseeded images;
-- reads SSH authorized keys from `/etc/yeet-vm/authorized_keys.d/%u` through
-  the NixOS OpenSSH `authorizedKeysFiles` option;
-- grows the ext4 root filesystem at boot before yeet reports guest readiness,
-  so ZFS-backed clones use the requested VM disk size;
-- enables `yeet-agent.service` so catch can query current guest network state
-  over Firecracker vsock;
-- disables Firecracker-inapplicable static `modprobe@...` startup units and
-  clears upstream generic hardware module requests because yeet kernels build
-  the microVM drivers in and the image does not ship a module tree;
-- keeps yeet-owned boot, readiness, SSH, sync, network, and package-source
-  tooling in `yeet/vm.nix`, including `rclone`, `rsync`, `iptables`,
-  `nftables`, `curl`, `git`, `jq`, `openssh`, and related base tools;
-- keeps `/etc/nixos/system.nix` as the user-additive layer, seeded only with
-  starter admin tools such as `htop` and `vim`;
-- provides `/dev/net/tun` through tmpfiles for guest-managed tunnel software.
+- `build-kernel.yml` builds and publishes canonical kernel assets.
+- `publish-kernel-packages.yml` publishes the apt and Nix package sources.
+- `build-ubuntu-26.04.yml` publishes Ubuntu image bundles.
+- `build-nixos-26.05.yml` publishes NixOS image bundles.
+- `sync-latest-stable-kernel.yml` checks for newer stable kernels and rebuilds
+  stale image families.
 
-The NixOS image does not preinstall Tailscale or other application services.
-Users who want Tailscale should enable it through their NixOS configuration,
-for example with `services.tailscale.enable = true;`, then rebuild the system
-inside the VM.
+The image workflows check out `yeetrun/yeet` at `yeet_ref`, build the guest
+tools, consume a canonical kernel release or build a fallback kernel, build the
+rootfs, verify the bundle, publish an immutable release, and optionally update
+the latest alias used by catch.
 
-Local build:
+Detailed workflow inputs live in `.github/workflows/`. The README describes
+the release model; the workflow files are the source of truth for dispatch
+parameters.
 
-```bash
-scripts/build-linux-kernel.sh dist/kernel-linux-7.0
-YEET_VM_KERNEL_PATH="$PWD/dist/kernel-linux-7.0/vmlinux" \
-  YEET_VM_KERNEL_VERSION=linux-7.0-yeet \
-  YEET_SOURCE_PATH="$PWD/../yeet" \
-  scripts/build-nixos-26.05.sh
-```
-
-This local build path is the manual fallback used when no `kernel_release` is
-supplied. Set `kernel_release` in the workflow to consume verified canonical
-kernel assets instead.
-
-Local Nix checks:
-
-```bash
-mise run lint
-YEET_SOURCE_PATH="$PWD/../yeet" scripts/verify-nixos-26.05.sh
-```
-
-`mise run lint` runs `deadnix`, `nixpkgs-fmt --check`, and `statix check`
-against the flake and NixOS module. The verifier checks the yeet microVM
-profile, service wiring, metadata integration, rebuild defaults, terminfo
-integration, guest tool packaging, and user overrideability. Set
-`YEET_SOURCE_PATH` while testing yeet changes that have not reached the
-`flake.lock` yeet input yet.
-
-## Publish a New Bundle
-
-### Ubuntu
-
-Use the **Build Ubuntu 26.04 VM image** GitHub Actions workflow from the
-Actions tab. It is manually dispatched and runs on a GitHub-hosted Linux
-runner. The workflow checks out yeet at `yeet_ref`, builds the Rust
-`yeet-init` and `yeet-agent` guest tools, downloads a verified canonical kernel
-when `kernel_release` is set or builds the kernel locally when it is empty,
-customizes the Ubuntu rootfs, verifies the bundle, and publishes the release
-assets.
-
-Inputs:
-
-- `version`: release and image version, usually
-  `ubuntu-26.04-amd64-kernel-<kernel>-v<N>`; legacy
-  `ubuntu-26.04-amd64-v<N>` releases remain valid
-- `yeet_ref`: yeet repository ref used to build `guest/yeet-init` and
-  `guest/yeet-agent`
-- `ubuntu_cloud_base_url`: Ubuntu cloud image directory URL
-- `ubuntu_cloud_image`: Ubuntu cloud image tarball name
-- `firecracker_version`: Firecracker release version
-- `kernel_release`: optional canonical kernel release to consume; leave empty
-  to build the kernel locally
-- `kernel_version`: Linux kernel version to build
-- `upstream_kernel_version`: official upstream Linux kernel version recorded in
-  the manifest
-- `image_revision`: numeric per-family image revision; it must match the final
-  `v<N>` suffix when the version includes one
-- `kernel_source_url`: Linux kernel source tarball URL
-- `kernel_source_sha256`: Linux kernel source tarball SHA-256
-- `kernel_config_url`: Firecracker guest kernel config URL used as the build
-  baseline. The default is pinned to the Firecracker microVM config revision
-  used by yeet's no-initrd direct-boot image.
-- `zstd_level`: compression level for `rootfs.ext4.zst`
-- `overwrite_release`: delete an existing release/tag with the same version
-  before publishing
-- `publish_latest_alias`: update the stable Ubuntu latest alias after
-  publishing the immutable version release
-- `latest_alias`: release/tag name for the catch-facing latest alias
-
-The workflow validates `checksums.txt`, confirms the fast image has no
-`initrd.img`, checks the required kernel config values, verifies the embedded
-`yeet-init` and `yeet-agent`, terminfo, router rootfs defaults,
-Ubuntu-compatible package paths, host-compatible ext4 rootfs features, and
-guest tool manifest metadata, prints the manifest, and publishes the release
-assets.
-
-### NixOS
-
-Use the **Build NixOS 26.05 VM image** GitHub Actions workflow. It checks out
-yeet at `yeet_ref`, downloads a verified canonical kernel when `kernel_release`
-is set or builds the kernel locally when it is empty, builds the NixOS rootfs
-from the flake, verifies the bundle, publishes an immutable version release,
-and can also update the `nixos-26.05-amd64-latest` release alias used by catch.
-
-Inputs:
-
-- `version`: release and image version, usually
-  `nixos-26.05-amd64-kernel-<kernel>-v<N>`; legacy
-  `nixos-26.05-amd64-v<N>` releases remain valid
-- `yeet_ref`: yeet repository ref used to build `guest/yeet-init` and
-  `guest/yeet-agent`
-- `kernel_release`: optional canonical kernel release to consume; leave empty
-  to build the kernel locally
-- `kernel_version`: Linux kernel version to build
-- `upstream_kernel_version`: official upstream Linux kernel version recorded in
-  the manifest
-- `image_revision`: numeric per-family image revision; it must match the final
-  `v<N>` suffix when the version includes one
-- `kernel_source_url`: Linux kernel source tarball URL
-- `kernel_source_sha256`: Linux kernel source tarball SHA-256
-- `kernel_config_url`: Firecracker guest kernel config URL used as the build
-  baseline
-- `firecracker_version`: Firecracker release version
-- `zstd_level`: compression level for `rootfs.ext4.zst`
-- `overwrite_release`: delete an existing release/tag with the same version
-  before publishing
-- `publish_latest_alias`: update the stable NixOS latest alias after publishing
-  the immutable version release
-- `latest_alias`: release/tag name for the catch-facing latest alias
-
-The workflow validates the NixOS microVM profile, checks `checksums.txt`,
-checks the required kernel config values, verifies NixOS system links, confirms
-the embedded `yeet-init` and `yeet-agent`, checks the Ghostty terminfo source,
-verifies NixOS manifest metadata, prints the manifest, and publishes the
-release assets.
+Verification covers checksums, required kernel config values, embedded guest
+tools, manifest metadata, package-source defaults, terminfo integration, and
+image-family-specific rootfs policy.

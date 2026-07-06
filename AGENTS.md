@@ -42,5 +42,5 @@ This repository builds and publishes official yeet VM image bundles.
 - Preserve `nixos-rebuild` compatibility. The shipped configuration should be a
   reasonable flake users can extend rather than a hidden appliance image.
 - Avoid preinstalling long-running application services unless they are part of
-  the base VM contract. Users should enable software such as Tailscale through
-  normal NixOS configuration.
+  the base VM contract. Users should enable optional application services
+  through normal NixOS configuration.
