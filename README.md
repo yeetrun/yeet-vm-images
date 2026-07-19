@@ -21,6 +21,7 @@ Each published bundle includes:
 - `vmlinux`
 - `rootfs.ext4.zst`
 - `firecracker`
+- `jailer`
 - `kernel.config`
 - `checksums.txt`
 
@@ -40,8 +41,8 @@ renamed, or intentionally redirected.
 
 When a user asks Yeet for an official VM payload, catch resolves the payload
 through `catalog.json`, reads the manifest, verifies checksums, downloads the
-rootfs, kernel, and Firecracker binary, and boots the guest with Firecracker
-direct kernel boot.
+rootfs, kernel, and matching Firecracker and jailer binaries, then launches the
+guest through the jailer with Firecracker direct kernel boot.
 
 Inside the guest:
 

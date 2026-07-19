@@ -17,6 +17,7 @@ assets=(
 	manifest.json
 	vmlinux
 	firecracker
+	jailer
 	kernel.config
 	checksums.txt
 )

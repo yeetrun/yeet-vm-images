@@ -14,7 +14,7 @@ out_dir="$tmp_dir/out"
 kernel_out_dir="$tmp_dir/kernel-out"
 mkdir -p "$bin_dir" "$out_dir" "$kernel_out_dir"
 
-for asset in manifest.json vmlinux rootfs.ext4.zst firecracker kernel.config checksums.txt; do
+for asset in manifest.json vmlinux rootfs.ext4.zst firecracker jailer kernel.config checksums.txt; do
 	printf '%s\n' "$asset payload" >"$out_dir/$asset"
 done
 for asset in vmlinux kernel.config kernel-manifest.json kernel-checksums.txt; do
@@ -135,6 +135,7 @@ upload test-tag rootfs.ext4.zst
 upload test-tag manifest.json
 upload test-tag vmlinux
 upload test-tag firecracker
+upload test-tag jailer
 upload test-tag kernel.config
 upload test-tag checksums.txt
 edit test-tag --draft=false"

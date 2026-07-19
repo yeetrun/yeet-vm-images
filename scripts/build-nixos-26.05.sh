@@ -272,6 +272,7 @@ if [ -r "$(dirname "$kernel_path")/kernel.config" ]; then
 	install -m 0644 "$(dirname "$kernel_path")/kernel.config" "$out_dir/kernel.config"
 fi
 install -m 0755 "$fc_dir/firecracker-${firecracker_version}-${firecracker_arch}" "$out_dir/firecracker"
+install -m 0755 "$fc_dir/jailer-${firecracker_version}-${firecracker_arch}" "$out_dir/jailer"
 
 echo "Compressing rootfs..."
 zstd -T0 "-$zstd_level" -f --no-progress -o "$out_dir/rootfs.ext4.zst" "$out_dir/rootfs.ext4"
@@ -280,6 +281,7 @@ rootfs_size="$(stat -c %s "$out_dir/rootfs.ext4")"
 rootfs_sha="$(sha256sum "$out_dir/rootfs.ext4.zst" | awk '{ print $1 }')"
 kernel_sha="$(sha256sum "$out_dir/vmlinux" | awk '{ print $1 }')"
 firecracker_sha="$(sha256sum "$out_dir/firecracker" | awk '{ print $1 }')"
+jailer_sha="$(sha256sum "$out_dir/jailer" | awk '{ print $1 }')"
 source_image_sha="$(sha256sum "$out_dir/rootfs.ext4" | awk '{ print $1 }')"
 build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 flake_metadata="$(nix_flake_metadata_json)"
@@ -325,6 +327,7 @@ cat >"$out_dir/manifest.json" <<JSON
   "kernel": "vmlinux",
   "rootfs": "rootfs.ext4.zst",
   "firecracker": "firecracker",
+  "jailer": "jailer",
   "rootfs_size": $rootfs_size,
   "kernel_version": "$kernel_version",
 $upstream_kernel_version_manifest_line
@@ -343,7 +346,8 @@ $kernel_source_sha256_manifest_line
     "vmlinux": "$kernel_sha",
 $kernel_config_checksum_line
     "rootfs.ext4.zst": "$rootfs_sha",
-    "firecracker": "$firecracker_sha"
+    "firecracker": "$firecracker_sha",
+    "jailer": "$jailer_sha"
   }
 }
 JSON
@@ -354,7 +358,7 @@ JSON
 	if [ -f kernel.config ]; then
 		checksum_files+=(kernel.config)
 	fi
-	checksum_files+=(rootfs.ext4.zst firecracker)
+	checksum_files+=(rootfs.ext4.zst firecracker jailer)
 	sha256sum "${checksum_files[@]}" >checksums.txt
 )
 

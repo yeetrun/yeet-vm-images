@@ -268,7 +268,7 @@ jobs:
       - name: Verify bundle
         run: |
           set -euo pipefail
-          for asset in manifest.json vmlinux rootfs.ext4.zst firecracker kernel.config checksums.txt; do
+          for asset in manifest.json vmlinux rootfs.ext4.zst firecracker jailer kernel.config checksums.txt; do
             test -s "$OUT_DIR/$asset"
           done
           if [ -e "$OUT_DIR/initrd.img" ]; then
@@ -298,6 +298,12 @@ jobs:
           check_manifest_checksum kernel.config
           check_manifest_checksum rootfs.ext4.zst
           check_manifest_checksum firecracker
+          check_manifest_checksum jailer
+          jailer_version="$("$OUT_DIR/jailer" --version)"
+          if [ "$jailer_version" != "Jailer $FIRECRACKER_VERSION" ]; then
+            echo "jailer version mismatch: got $jailer_version, want $FIRECRACKER_VERSION" >&2
+            exit 1
+          fi
           jq -e '
             .image_profile == "fast" and
             .kernel_policy == "yeet-managed" and
@@ -309,6 +315,7 @@ jobs:
             (.guest_agent_sha256 | test("^[0-9a-f]{64}$")) and
             .kernel == "vmlinux" and
             .rootfs == "rootfs.ext4.zst" and
+            .jailer == "jailer" and
             (.image_revision | type == "number") and
             .image_revision == (env.YEET_VM_IMAGE_REVISION | tonumber) and
             .upstream_kernel_version == env.YEET_VM_UPSTREAM_KERNEL_VERSION and
