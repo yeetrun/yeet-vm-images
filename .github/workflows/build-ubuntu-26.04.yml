@@ -26,7 +26,7 @@ on:
         description: Firecracker release version.
         required: false
         type: string
-        default: v1.14.3
+        default: v1.16.1
       kernel_version:
         description: Linux kernel version to build.
         required: false
@@ -102,7 +102,7 @@ on:
       firecracker_version:
         description: Firecracker release version.
         required: true
-        default: v1.14.3
+        default: v1.16.1
       kernel_version:
         description: Linux kernel version to build.
         required: true
@@ -299,6 +299,11 @@ jobs:
           check_manifest_checksum rootfs.ext4.zst
           check_manifest_checksum firecracker
           check_manifest_checksum jailer
+          firecracker_version_actual="$("$OUT_DIR/firecracker" --version)"
+          if [ "$firecracker_version_actual" != "Firecracker $FIRECRACKER_VERSION" ]; then
+            echo "firecracker version mismatch: got $firecracker_version_actual, want $FIRECRACKER_VERSION" >&2
+            exit 1
+          fi
           jailer_version="$("$OUT_DIR/jailer" --version)"
           if [ "$jailer_version" != "Jailer $FIRECRACKER_VERSION" ]; then
             echo "jailer version mismatch: got $jailer_version, want $FIRECRACKER_VERSION" >&2
@@ -321,6 +326,7 @@ jobs:
             .upstream_kernel_version == env.YEET_VM_UPSTREAM_KERNEL_VERSION and
             .kernel_source_url == env.YEET_KERNEL_SOURCE_URL and
             .kernel_source_sha256 == env.YEET_KERNEL_SOURCE_SHA256 and
+            .provenance.firecracker_version == env.FIRECRACKER_VERSION and
             .provenance.yeet_rev == env.YEET_SOURCE_REV and
             .provenance.kernel_source == "yeet-managed"
           ' "$OUT_DIR/manifest.json"

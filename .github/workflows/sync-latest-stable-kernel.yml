@@ -231,7 +231,7 @@ jobs:
       yeet_ref: ${{ needs.detect.outputs.yeet_ref }}
       ubuntu_cloud_base_url: https://cloud-images.ubuntu.com/resolute/current
       ubuntu_cloud_image: resolute-server-cloudimg-amd64.tar.gz
-      firecracker_version: v1.14.3
+      firecracker_version: v1.16.1
       kernel_version: ${{ needs.detect.outputs.kernel_version }}
       upstream_kernel_version: ${{ needs.detect.outputs.kernel_version }}
       image_revision: ${{ needs.detect.outputs.ubuntu_image_revision }}
@@ -263,7 +263,7 @@ jobs:
       version: ${{ needs.detect.outputs.nixos_version }}
       yeet_ref: ${{ needs.detect.outputs.yeet_ref }}
       yeet_vm_images_ref: ${{ needs.publish-kernel-packages.outputs.metadata_commit }}
-      firecracker_version: v1.14.3
+      firecracker_version: v1.16.1
       kernel_version: ${{ needs.detect.outputs.kernel_version }}
       upstream_kernel_version: ${{ needs.detect.outputs.kernel_version }}
       image_revision: ${{ needs.detect.outputs.nixos_image_revision }}
