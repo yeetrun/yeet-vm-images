@@ -1,0 +1,1 @@
+48c375b9ea4b80af29070edfdc796c5097ad7db55e15401af7a3c43ed018dd6a  firecracker-v1.16.1-x86_64.tgz

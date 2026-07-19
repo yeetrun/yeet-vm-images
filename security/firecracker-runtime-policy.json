@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "versions": {
+    "v1.16.1": {
+      "production_release": true,
+      "default_seccomp": true,
+      "support_state": "supported",
+      "binary_origin": "official-github-release",
+      "seccomp_evidence": "upstream-release-default-build-contract",
+      "policy_url": "https://github.com/firecracker-microvm/firecracker/blob/main/docs/RELEASE_POLICY.md",
+      "reviewed_at": "2026-07-19"
+    },
+    "v1.15.0": {
+      "production_release": true,
+      "default_seccomp": true,
+      "support_state": "eol",
+      "binary_origin": "official-github-release",
+      "seccomp_evidence": "upstream-release-default-build-contract",
+      "policy_url": "https://github.com/firecracker-microvm/firecracker/blob/main/docs/RELEASE_POLICY.md",
+      "reviewed_at": "2026-07-19"
+    }
+  }
+}
