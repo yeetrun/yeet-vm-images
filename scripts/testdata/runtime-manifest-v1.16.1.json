@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "runtime_id": "firecracker-v1.16.1-yeet-v1",
+  "architecture": "amd64",
+  "upstream": {
+    "repository": "firecracker-microvm/firecracker",
+    "version": "v1.16.1",
+    "tag": "v1.16.1",
+    "commit": "0123456789abcdef0123456789abcdef01234567",
+    "archive_url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz",
+    "archive_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "checksum_url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz.sha256.txt",
+    "tag_signature": {
+      "status": "signed",
+      "fingerprint": "0123456789ABCDEF0123456789ABCDEF01234567"
+    }
+  },
+  "components": {
+    "firecracker": {
+      "path": "firecracker",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "version_output": "Firecracker v1.16.1"
+    },
+    "jailer": {
+      "path": "jailer",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "version_output": "Jailer v1.16.1"
+    }
+  },
+  "classification": {
+    "production_release": true,
+    "default_seccomp": true
+  },
+  "support": {
+    "state": "supported",
+    "policy_url": "https://github.com/firecracker-microvm/firecracker/blob/main/docs/RELEASE_POLICY.md"
+  },
+  "provenance": {
+    "repository": "yeetrun/yeet-vm-images",
+    "commit": "89abcdef0123456789abcdef0123456789abcdef",
+    "workflow_run": "123456789"
+  }
+}

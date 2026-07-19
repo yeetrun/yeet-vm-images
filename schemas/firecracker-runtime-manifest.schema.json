@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yeetrun/yeet-vm-images/schemas/firecracker-runtime-manifest.schema.json",
+  "title": "Firecracker runtime manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "runtime_id",
+    "architecture",
+    "upstream",
+    "components",
+    "classification",
+    "support",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "runtime_id": {
+      "type": "string",
+      "pattern": "^firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*$"
+    },
+    "architecture": {
+      "const": "amd64"
+    },
+    "upstream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "version",
+        "tag",
+        "commit",
+        "archive_url",
+        "archive_sha256",
+        "checksum_url",
+        "tag_signature"
+      ],
+      "properties": {
+        "repository": {
+          "const": "firecracker-microvm/firecracker"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^v[0-9]+[.][0-9]+[.][0-9]+$"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^v[0-9]+[.][0-9]+[.][0-9]+$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "archive_url": {
+          "type": "string",
+          "pattern": "^https://github[.]com/firecracker-microvm/firecracker/releases/download/v[0-9]+[.][0-9]+[.][0-9]+/firecracker-v[0-9]+[.][0-9]+[.][0-9]+-x86_64[.]tgz$"
+        },
+        "archive_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "checksum_url": {
+          "type": "string",
+          "pattern": "^https://github[.]com/firecracker-microvm/firecracker/releases/download/v[0-9]+[.][0-9]+[.][0-9]+/firecracker-v[0-9]+[.][0-9]+[.][0-9]+-x86_64[.]tgz[.]sha256[.]txt$"
+        },
+        "tag_signature": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "fingerprint"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "signed",
+                "unsigned-approved",
+                "signer-rotation-approved"
+              ]
+            },
+            "fingerprint": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "const": "unsigned-approved"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "fingerprint": {
+                    "type": "null"
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "fingerprint": {
+                    "type": "string",
+                    "pattern": "^([0-9A-F]{40}|[0-9A-F]{64})$"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "firecracker",
+        "jailer"
+      ],
+      "properties": {
+        "firecracker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256",
+            "version_output"
+          ],
+          "properties": {
+            "path": {
+              "const": "firecracker"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "version_output": {
+              "type": "string",
+              "pattern": "^Firecracker v[0-9]+[.][0-9]+[.][0-9]+$"
+            }
+          }
+        },
+        "jailer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256",
+            "version_output"
+          ],
+          "properties": {
+            "path": {
+              "const": "jailer"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "version_output": {
+              "type": "string",
+              "pattern": "^Jailer v[0-9]+[.][0-9]+[.][0-9]+$"
+            }
+          }
+        }
+      }
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "production_release",
+        "default_seccomp"
+      ],
+      "properties": {
+        "production_release": {
+          "const": true
+        },
+        "default_seccomp": {
+          "const": true
+        }
+      }
+    },
+    "support": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "policy_url"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "supported",
+            "deprecated",
+            "eol",
+            "revoked"
+          ]
+        },
+        "policy_url": {
+          "const": "https://github.com/firecracker-microvm/firecracker/blob/main/docs/RELEASE_POLICY.md"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "workflow_run"
+      ],
+      "properties": {
+        "repository": {
+          "const": "yeetrun/yeet-vm-images"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "workflow_run": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      }
+    }
+  }
+}

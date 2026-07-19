@@ -21,6 +21,8 @@ for cmd in curl jq; do
 	require "$cmd"
 done
 
+"$repo_root/scripts/verify-runtime-catalog.sh" "$repo_root/runtime-catalog.json"
+
 jq -e '
   def supported_capabilities: ["guest_agent", "guest_init", "rsync"];
   def payload_version_prefix:

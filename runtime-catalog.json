@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "architectures": {
+    "amd64": {
+      "runtimes": [],
+      "channels": {
+        "stable": null,
+        "candidate": null
+      }
+    }
+  },
+  "revocations": []
+}

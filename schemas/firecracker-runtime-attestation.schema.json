@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yeetrun/yeet-vm-images/schemas/firecracker-runtime-attestation.schema.json",
+  "title": "Firecracker runtime integration attestation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "subject",
+    "runner",
+    "source",
+    "matrix",
+    "started_at",
+    "completed_at",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "integration"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_id",
+        "manifest_sha256"
+      ],
+      "properties": {
+        "runtime_id": {
+          "type": "string",
+          "pattern": "^firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*$"
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "architecture"
+      ],
+      "properties": {
+        "class": {
+          "const": "self-hosted-linux-kvm"
+        },
+        "architecture": {
+          "const": "amd64"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "workflow_run"
+      ],
+      "properties": {
+        "repository": {
+          "const": "yeetrun/yeet-vm-images"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "workflow_run": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      }
+    },
+    "matrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ubuntu",
+        "nixos",
+        "current_kernel",
+        "previous_kernel",
+        "raw",
+        "zfs",
+        "custom_roots",
+        "jailer_drop"
+      ],
+      "properties": {
+        "ubuntu": {
+          "const": "passed"
+        },
+        "nixos": {
+          "const": "passed"
+        },
+        "current_kernel": {
+          "const": "passed"
+        },
+        "previous_kernel": {
+          "const": "passed"
+        },
+        "raw": {
+          "const": "passed"
+        },
+        "zfs": {
+          "const": "passed"
+        },
+        "custom_roots": {
+          "const": "passed"
+        },
+        "jailer_drop": {
+          "const": "passed"
+        }
+      }
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "result": {
+      "const": "passed"
+    }
+  }
+}

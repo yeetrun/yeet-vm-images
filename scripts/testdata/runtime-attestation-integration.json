@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "integration",
+  "subject": {
+    "runtime_id": "firecracker-v1.16.1-yeet-v1",
+    "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "runner": {
+    "class": "self-hosted-linux-kvm",
+    "architecture": "amd64"
+  },
+  "source": {
+    "repository": "yeetrun/yeet-vm-images",
+    "commit": "89abcdef0123456789abcdef0123456789abcdef",
+    "workflow_run": "123456789"
+  },
+  "matrix": {
+    "ubuntu": "passed",
+    "nixos": "passed",
+    "current_kernel": "passed",
+    "previous_kernel": "passed",
+    "raw": "passed",
+    "zfs": "passed",
+    "custom_roots": "passed",
+    "jailer_drop": "passed"
+  },
+  "started_at": "2026-07-19T14:00:00Z",
+  "completed_at": "2026-07-19T14:37:00Z",
+  "result": "passed"
+}

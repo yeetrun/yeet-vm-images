@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yeetrun/yeet-vm-images/schemas/firecracker-runtime-catalog.schema.json",
+  "title": "Firecracker runtime catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "architectures",
+    "revocations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "architectures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "amd64"
+      ],
+      "properties": {
+        "amd64": {
+          "$ref": "#/$defs/architecture"
+        }
+      }
+    },
+    "revocations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/revocation"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "runtime_id": {
+      "type": "string",
+      "pattern": "^firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*$"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_id",
+        "manifest_url",
+        "manifest_sha256",
+        "upstream_version",
+        "support",
+        "integration_attestation_url",
+        "integration_attestation_sha256",
+        "canary_attestation_url",
+        "canary_attestation_sha256"
+      ],
+      "properties": {
+        "runtime_id": {
+          "$ref": "#/$defs/runtime_id"
+        },
+        "manifest_url": {
+          "type": "string",
+          "pattern": "^https://github[.]com/yeetrun/yeet-vm-images/releases/download/firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*/runtime-manifest[.]json$"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "upstream_version": {
+          "type": "string",
+          "pattern": "^v[0-9]+[.][0-9]+[.][0-9]+$"
+        },
+        "support": {
+          "enum": [
+            "supported",
+            "deprecated",
+            "eol",
+            "revoked"
+          ]
+        },
+        "integration_attestation_url": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^https://github[.]com/yeetrun/yeet-vm-images/releases/download/firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*-integration-[1-9][0-9]*/runtime-attestation[.]json$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "integration_attestation_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "canary_attestation_url": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^https://github[.]com/yeetrun/yeet-vm-images/releases/download/firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*-canary-[1-9][0-9]*/runtime-attestation[.]json$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "canary_attestation_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "integration_attestation_url": {
+                  "type": "string"
+                },
+                "integration_attestation_sha256": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "properties": {
+                "integration_attestation_url": {
+                  "type": "null"
+                },
+                "integration_attestation_sha256": {
+                  "type": "null"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "canary_attestation_url": {
+                  "type": "string"
+                },
+                "canary_attestation_sha256": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "properties": {
+                "canary_attestation_url": {
+                  "type": "null"
+                },
+                "canary_attestation_sha256": {
+                  "type": "null"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "channel": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "runtime_id",
+        "manifest_sha256"
+      ],
+      "properties": {
+        "runtime_id": {
+          "$ref": "#/$defs/runtime_id"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "architecture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtimes",
+        "channels"
+      ],
+      "properties": {
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runtime"
+          }
+        },
+        "channels": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stable",
+            "candidate"
+          ],
+          "properties": {
+            "stable": {
+              "$ref": "#/$defs/channel"
+            },
+            "candidate": {
+              "$ref": "#/$defs/channel"
+            }
+          }
+        }
+      }
+    },
+    "revocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_id",
+        "manifest_sha256",
+        "reason",
+        "recorded_at"
+      ],
+      "properties": {
+        "runtime_id": {
+          "$ref": "#/$defs/runtime_id"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}
