@@ -175,6 +175,55 @@ tools, consume a canonical kernel release or build a fallback kernel, build the
 rootfs, verify the bundle, publish an immutable release, and optionally update
 the latest alias used by catch.
 
+### Firecracker Runtime Candidates
+
+The `sync-latest-stable-firecracker.yml` workflow runs daily and can be started
+manually. It discovers the newest official stable Firecracker release and calls
+the local reusable `build-firecracker-runtime.yml` workflow only when that
+upstream version has no verified immutable candidate release. All remote runtime
+tag refs allocate packaging revisions, so a preserved tag or draft consumes its
+`vN` and the next attempt uses `vN+1`. The scheduled workflow passes that exact
+ID to the reusable workflow, which independently re-resolves it inside the
+serialized job before building.
+
+Before reporting a no-op, `verify-published-firecracker-runtime.sh` verifies the
+published release identity and immutable state, its exact four asset records and
+downloaded bytes, the runtime manifest schema and cross-field contract, and the
+tag target against manifest provenance. A malformed or mutable matching release
+is a failed discovery, not a no-op. A new candidate contains exactly
+`firecracker`, `jailer`, `runtime-manifest.json`, and `runtime-checksums.txt`.
+Publication emits GitHub's native `release: published` event for the Task 5
+integration workflow; it does not send a second dispatch API request. The
+workflow does not edit `runtime-catalog.json`.
+
+Runtime publication requires two protected GitHub Environments:
+
+- `firecracker-runtime-publish` protects every candidate publication and holds
+  the environment-scoped `YEET_RUNTIME_GITHUB_APP_CLIENT_ID` variable and
+  `YEET_RUNTIME_GITHUB_APP_PRIVATE_KEY` secret.
+- `firecracker-runtime-overrides` adds a separate approval when an unsigned tag
+  or signer rotation is explicitly requested. The normal
+  `firecracker-runtime-publish` protection still applies afterward.
+
+The GitHub App must be installed only on `yeetrun/yeet-vm-images` and grant the
+repository permissions `Administration: read` and `Contents: write`. The
+workflow mints a repository-scoped installation token with those same explicit
+permissions and exposes it only to the publication step. There is no
+personal-token or default `GITHUB_TOKEN` publication fallback. If App
+configuration, protected environments, or reviewed signer material is missing,
+the workflow fails before creating a runtime tag or release.
+Before publication, repository immutable releases must be enabled; the publisher
+checks that setting before it creates the immutable runtime tag.
+The App credentials and scheduled publication remain disabled until the Task 5
+integration workflow is present on `main` with both its native release consumer
+and manual recovery entrypoint.
+
+The fixed `firecracker-runtime-publish` concurrency group serializes automated
+tag/release writes and never cancels an in-progress transaction. The trusted
+repository boundary includes repository administrators because they can change
+workflow and Environment configuration; this automation does not claim to
+serialize independent administrator actions.
+
 Detailed workflow inputs live in `.github/workflows/`. The README describes
 the release model; the workflow files are the source of truth for dispatch
 parameters.

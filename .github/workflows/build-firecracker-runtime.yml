@@ -1,0 +1,200 @@
+name: Build and publish Firecracker runtime candidate
+
+on:
+  workflow_call:
+    inputs:
+      upstream_version:
+        description: Exact stable upstream Firecracker version in vMAJOR.MINOR.PATCH form.
+        required: true
+        type: string
+      runtime_id:
+        description: Expected next packaging ID, independently re-resolved in the serialized job.
+        required: true
+        type: string
+      allow_unsigned_tag:
+        description: Permit a reviewed unsigned upstream tag for this run.
+        required: false
+        type: boolean
+        default: false
+      allow_signer_rotation:
+        description: Permit a reviewed upstream signer rotation for this run.
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      runtime_id:
+        description: Immutable runtime candidate ID.
+        value: ${{ jobs.publish-firecracker-runtime.outputs.runtime_id }}
+      manifest_url:
+        description: Immutable runtime manifest URL.
+        value: ${{ jobs.publish-firecracker-runtime.outputs.manifest_url }}
+      manifest_sha256:
+        description: SHA-256 of the immutable runtime manifest.
+        value: ${{ jobs.publish-firecracker-runtime.outputs.manifest_sha256 }}
+      release_url:
+        description: Immutable runtime candidate release URL.
+        value: ${{ jobs.publish-firecracker-runtime.outputs.release_url }}
+
+permissions:
+  contents: read
+
+jobs:
+  approve-runtime-overrides:
+    if: ${{ inputs.allow_unsigned_tag || inputs.allow_signer_rotation }}
+    runs-on: ubuntu-24.04
+    permissions: {}
+    environment: firecracker-runtime-overrides
+    steps:
+      - name: Record override approval
+        run: echo "Runtime source override approved by the protected environment." >>"$GITHUB_STEP_SUMMARY"
+
+  publish-firecracker-runtime:
+    needs: approve-runtime-overrides
+    if: ${{ always() && (needs.approve-runtime-overrides.result == 'success' || needs.approve-runtime-overrides.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    environment: firecracker-runtime-publish
+    concurrency:
+      group: firecracker-runtime-publish
+      cancel-in-progress: false
+    outputs:
+      runtime_id: ${{ steps.publish.outputs.runtime_id }}
+      manifest_url: ${{ steps.publish.outputs.manifest_url }}
+      manifest_sha256: ${{ steps.publish.outputs.manifest_sha256 }}
+      release_url: ${{ steps.publish.outputs.release_url }}
+
+    steps:
+      - name: Checkout the caller commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned verification dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl file git gnupg jq pipx python3
+          pipx install check-jsonschema==0.37.4
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Resolve the next packaging revision
+        id: revision
+        env:
+          REQUESTED_RUNTIME_ID: ${{ inputs.runtime_id }}
+          UPSTREAM_VERSION: ${{ inputs.upstream_version }}
+        run: |
+          set -euo pipefail
+          release_info="$(scripts/resolve-firecracker-runtime-release.sh "$UPSTREAM_VERSION")"
+          runtime_id="$(jq -er '.next_release' <<<"$release_info")"
+          if [ "$REQUESTED_RUNTIME_ID" != "$runtime_id" ]; then
+            echo "Requested runtime ID $REQUESTED_RUNTIME_ID is not the next immutable packaging revision $runtime_id" >&2
+            exit 1
+          fi
+          echo "runtime_id=$runtime_id" >>"$GITHUB_OUTPUT"
+
+      - name: Build the verified runtime pair
+        env:
+          ALLOW_SIGNER_ROTATION: ${{ inputs.allow_signer_rotation }}
+          ALLOW_UNSIGNED_TAG: ${{ inputs.allow_unsigned_tag }}
+          RUNTIME_ID: ${{ steps.revision.outputs.runtime_id }}
+          UPSTREAM_VERSION: ${{ inputs.upstream_version }}
+        run: |
+          set -euo pipefail
+          args=(
+            --upstream-version "$UPSTREAM_VERSION"
+            --runtime-id "$RUNTIME_ID"
+            --out dist/firecracker-runtime
+          )
+          if [ "$ALLOW_UNSIGNED_TAG" = true ]; then args+=(--allow-unsigned-tag); fi
+          if [ "$ALLOW_SIGNER_ROTATION" = true ]; then args+=(--allow-signer-rotation); fi
+          mkdir -p dist
+          scripts/build-firecracker-runtime.sh "${args[@]}"
+
+      - name: Verify the exact candidate bundle
+        env:
+          RUNTIME_ID: ${{ steps.revision.outputs.runtime_id }}
+        run: |
+          set -euo pipefail
+          expected=$'firecracker\njailer\nruntime-checksums.txt\nruntime-manifest.json'
+          actual="$(find dist/firecracker-runtime -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)"
+          [ "$actual" = "$expected" ] || {
+            echo "Runtime candidate does not contain exactly the four expected assets" >&2
+            exit 1
+          }
+          scripts/verify-firecracker-runtime-bundle.py \
+            dist/firecracker-runtime "$RUNTIME_ID" "$GITHUB_SHA" \
+            security/firecracker-runtime-policy.json scripts/resolve-firecracker-runtime-policy.py
+          (cd dist/firecracker-runtime && sha256sum --check --strict runtime-checksums.txt)
+
+      - name: Prepare immutable release notes
+        env:
+          RUNTIME_ID: ${{ steps.revision.outputs.runtime_id }}
+          UPSTREAM_VERSION: ${{ inputs.upstream_version }}
+        run: |
+          set -euo pipefail
+          {
+            echo "Verified Firecracker runtime candidate $RUNTIME_ID"
+            echo
+            echo "Upstream version: $UPSTREAM_VERSION"
+            echo "Repository commit: $GITHUB_SHA"
+            echo "Workflow run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } >dist/firecracker-runtime-release-notes.md
+
+      - name: Mint repository-scoped runtime publication token
+        id: runtime-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.YEET_RUNTIME_GITHUB_APP_CLIENT_ID }}
+          private-key: ${{ secrets.YEET_RUNTIME_GITHUB_APP_PRIVATE_KEY }}
+          owner: yeetrun
+          repositories: yeet-vm-images
+          permission-administration: read
+          permission-contents: write
+
+      - name: Publish candidate
+        id: publish
+        env:
+          GH_TOKEN: ${{ steps.runtime-app-token.outputs.token }}
+          RUNTIME_ID: ${{ steps.revision.outputs.runtime_id }}
+          YEET_RUNTIME_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          YEET_RUNTIME_WORKFLOW_REF: ${{ job.workflow_ref }}
+          YEET_RUNTIME_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          YEET_RUNTIME_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          scripts/publish-firecracker-runtime-assets.sh \
+            --runtime-id "$RUNTIME_ID" \
+            --target "$GITHUB_SHA" \
+            --notes-file dist/firecracker-runtime-release-notes.md \
+            --out dist/firecracker-runtime
+
+          manifest_sha256="$(sha256sum dist/firecracker-runtime/runtime-manifest.json | awk '{print $1}')"
+          manifest_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$RUNTIME_ID/runtime-manifest.json"
+          release_url="https://github.com/$GITHUB_REPOSITORY/releases/tag/$RUNTIME_ID"
+          {
+            echo "runtime_id=$RUNTIME_ID"
+            echo "manifest_url=$manifest_url"
+            echo "manifest_sha256=$manifest_sha256"
+            echo "release_url=$release_url"
+          } >>"$GITHUB_OUTPUT"
+
+          {
+            echo "### Firecracker runtime candidate"
+            echo
+            echo "- Runtime: \`$RUNTIME_ID\`"
+            echo "- Manifest: $manifest_url"
+            echo "- Manifest SHA-256: \`$manifest_sha256\`"
+            echo "- Release: $release_url"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Report candidate publication failure
+        if: ${{ failure() }}
+        run: |
+          {
+            echo "### Firecracker runtime candidate publication failed"
+            echo
+            echo "Candidate publication failed. Inspect the failed step; do not reuse a consumed runtime ID."
+          } >>"$GITHUB_STEP_SUMMARY"
+          exit 1

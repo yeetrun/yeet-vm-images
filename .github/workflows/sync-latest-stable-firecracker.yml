@@ -1,0 +1,169 @@
+name: Sync latest stable Firecracker runtime candidate
+
+on:
+  schedule:
+    - cron: "37 9 * * *"
+  workflow_dispatch:
+    inputs:
+      allow_unsigned_tag:
+        description: Request protected approval for an unsigned upstream tag.
+        required: false
+        type: boolean
+        default: false
+      allow_signer_rotation:
+        description: Request protected approval for an upstream signer rotation.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-latest-stable-firecracker
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    name: Discover newest stable Firecracker release
+    runs-on: ubuntu-24.04
+    outputs:
+      runtime_id: ${{ steps.candidate.outputs.runtime_id }}
+      should_publish: ${{ steps.candidate.outputs.should_publish }}
+      upstream_version: ${{ steps.candidate.outputs.upstream_version }}
+    steps:
+      - name: Checkout the discovery commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install discovery dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl git jq pipx python3
+          pipx install check-jsonschema==0.37.4
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Compare stable upstream with immutable candidates
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          report_discovery_failure() {
+            status=$?
+            trap - EXIT
+            if [ "$status" -ne 0 ]; then
+              {
+                echo "### Stable Firecracker discovery failed"
+                echo
+                echo "Discovery failed. Inspect the failed step before retrying."
+              } >>"$GITHUB_STEP_SUMMARY"
+            fi
+            exit "$status"
+          }
+          trap report_discovery_failure EXIT
+
+          upstream="$(scripts/resolve-latest-firecracker.sh)"
+          upstream_version="$(jq -er '.upstream_version' <<<"$upstream")"
+          allocation="$(scripts/resolve-firecracker-runtime-release.sh "$upstream_version")"
+          runtime_id="$(jq -er '.next_release' <<<"$allocation")"
+
+          published_tags="$RUNNER_TEMP/firecracker-runtime-published-tags.txt"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .published_at != null) | .tag_name' >"$published_tags"
+          published="$(scripts/resolve-firecracker-runtime-release.sh "$upstream_version" "$published_tags")"
+          current_release="$(jq -er '.current_release' <<<"$published")"
+
+          should_publish=true
+          if [ -n "$current_release" ]; then
+            scripts/verify-published-firecracker-runtime.sh "$current_release" >/dev/null
+            should_publish=false
+          fi
+          {
+            echo "runtime_id=$runtime_id"
+            echo "upstream_version=$upstream_version"
+            echo "should_publish=$should_publish"
+          } >>"$GITHUB_OUTPUT"
+
+          {
+            echo "### Stable Firecracker discovery"
+            echo
+            echo "- Upstream: \`$upstream_version\`"
+            if [ "$should_publish" = true ]; then
+              echo "- Result: no immutable candidate exists; publication requested."
+            else
+              echo "- Result: Candidate already exists; no publication requested."
+              echo "- Existing candidate: \`$current_release\`"
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
+          trap - EXIT
+
+  publish:
+    needs: discover
+    if: ${{ needs.discover.outputs.should_publish == 'true' }}
+    uses: ./.github/workflows/build-firecracker-runtime.yml
+    with:
+      upstream_version: ${{ needs.discover.outputs.upstream_version }}
+      runtime_id: ${{ needs.discover.outputs.runtime_id }}
+      allow_unsigned_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_unsigned_tag || false }}
+      allow_signer_rotation: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_signer_rotation || false }}
+
+  summarize:
+    needs: [discover, publish]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Summarize candidate publication
+        env:
+          DISCOVERY_RESULT: ${{ needs.discover.result }}
+          MANIFEST_SHA256: ${{ needs.publish.outputs.manifest_sha256 }}
+          MANIFEST_URL: ${{ needs.publish.outputs.manifest_url }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          RELEASE_URL: ${{ needs.publish.outputs.release_url }}
+          RUNTIME_ID: ${{ needs.publish.outputs.runtime_id }}
+          SHOULD_PUBLISH: ${{ needs.discover.outputs.should_publish }}
+        run: |
+          set -euo pipefail
+          if [ "$DISCOVERY_RESULT" != success ]; then
+            {
+              echo "### Stable Firecracker discovery failed"
+              echo
+              echo "Discovery failed. Inspect the failed step before retrying."
+            } >>"$GITHUB_STEP_SUMMARY"
+            echo "Stable Firecracker discovery did not complete" >&2
+            exit 1
+          fi
+          if [ "$SHOULD_PUBLISH" != true ]; then
+            echo "Candidate already exists; no publication requested." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$PUBLISH_RESULT" != success ]; then
+            {
+              echo "### Firecracker runtime candidate publication failed"
+              echo
+              echo "Candidate publication failed. Inspect the failed step; do not reuse a consumed runtime ID."
+            } >>"$GITHUB_STEP_SUMMARY"
+            echo "Candidate publication did not complete" >&2
+            exit 1
+          fi
+          if [ -z "$RUNTIME_ID" ] || [ -z "$MANIFEST_URL" ] || [ -z "$MANIFEST_SHA256" ] || [ -z "$RELEASE_URL" ]; then
+            {
+              echo "### Firecracker runtime candidate outputs missing"
+              echo
+              echo "Candidate outputs are missing. Inspect the publication job and preserved release state."
+            } >>"$GITHUB_STEP_SUMMARY"
+            echo "Candidate publication did not produce the required outputs" >&2
+            exit 1
+          fi
+          {
+            echo "Candidate publication completed."
+            echo
+            echo "- Runtime: \`$RUNTIME_ID\`"
+            echo "- Manifest: $MANIFEST_URL"
+            echo "- Manifest SHA-256: \`$MANIFEST_SHA256\`"
+            echo "- Release: $RELEASE_URL"
+          } >>"$GITHUB_STEP_SUMMARY"
