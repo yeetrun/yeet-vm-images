@@ -38,7 +38,7 @@ do
 	fi
 	assert_contains "$workflow" 'for asset in manifest.json vmlinux rootfs.ext4.zst firecracker jailer kernel.config checksums.txt; do'
 	assert_contains "$workflow" 'check_manifest_checksum jailer'
-	assert_contains "$workflow" 'firecracker_version_actual="$("$OUT_DIR/firecracker" --version)"'
+	assert_contains "$workflow" 'firecracker_version_actual="$("$OUT_DIR/firecracker" --version | sed -n '\''1p'\'')"'
 	assert_contains "$workflow" 'if [ "$firecracker_version_actual" != "Firecracker $FIRECRACKER_VERSION" ]; then'
 	assert_contains "$workflow" '.jailer == "jailer" and'
 	assert_contains "$workflow" '.provenance.firecracker_version == env.FIRECRACKER_VERSION and'

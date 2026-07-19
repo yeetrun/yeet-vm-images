@@ -299,7 +299,7 @@ jobs:
           check_manifest_checksum rootfs.ext4.zst
           check_manifest_checksum firecracker
           check_manifest_checksum jailer
-          firecracker_version_actual="$("$OUT_DIR/firecracker" --version)"
+          firecracker_version_actual="$("$OUT_DIR/firecracker" --version | sed -n '1p')"
           if [ "$firecracker_version_actual" != "Firecracker $FIRECRACKER_VERSION" ]; then
             echo "firecracker version mismatch: got $firecracker_version_actual, want $FIRECRACKER_VERSION" >&2
             exit 1
