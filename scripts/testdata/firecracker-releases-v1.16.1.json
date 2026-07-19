@@ -1,0 +1,60 @@
+[
+  {
+    "tag_name": "v1.2.100",
+    "draft": false,
+    "prerelease": false,
+    "assets": []
+  },
+  {
+    "tag_name": "v99.0.0",
+    "draft": true,
+    "prerelease": false,
+    "assets": []
+  },
+  {
+    "tag_name": "v1.16.1-rc1",
+    "draft": false,
+    "prerelease": false,
+    "assets": []
+  },
+  {
+    "tag_name": "v50.0.0",
+    "draft": false,
+    "prerelease": true,
+    "assets": []
+  },
+  {
+    "tag_name": "v1.16.1",
+    "draft": false,
+    "prerelease": false,
+    "assets": [
+      {
+        "name": "firecracker-v1.16.1-aarch64.tgz",
+        "browser_download_url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-aarch64.tgz",
+        "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "name": "firecracker-v1.16.1-x86_64.tgz.sha256.txt",
+        "browser_download_url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz.sha256.txt",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "name": "firecracker-v1.16.1-x86_64.tgz",
+        "browser_download_url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "tag_name": "1.999.0",
+    "draft": false,
+    "prerelease": false,
+    "assets": []
+  },
+  {
+    "tag_name": "v1.9.99",
+    "draft": false,
+    "prerelease": false,
+    "assets": []
+  }
+]
