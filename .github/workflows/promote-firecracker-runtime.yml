@@ -37,8 +37,35 @@ jobs:
       - name: Checkout workflow source without credentials
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
+          ref: ${{ job.workflow_sha }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify reviewed promotion workflow identity
+        env:
+          YEET_PROMOTION_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          YEET_PROMOTION_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          YEET_PROMOTION_WORKFLOW_REF: ${{ job.workflow_ref }}
+          YEET_PROMOTION_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          repository=yeetrun/yeet-vm-images
+          workflow_ref="$repository/.github/workflows/promote-firecracker-runtime.yml@refs/heads/main"
+          [ "${GITHUB_ACTIONS:-}" = true ]
+          [ "${GITHUB_REPOSITORY:-}" = "$repository" ]
+          [ "${GITHUB_JOB:-}" = promote-candidate ]
+          [ "${GITHUB_WORKFLOW_REF:-}" = "$workflow_ref" ]
+          [ "$YEET_PROMOTION_WORKFLOW_REPOSITORY" = "$repository" ]
+          [ "$YEET_PROMOTION_WORKFLOW_FILE_PATH" = .github/workflows/promote-firecracker-runtime.yml ]
+          [ "$YEET_PROMOTION_WORKFLOW_REF" = "$workflow_ref" ]
+          [[ "$YEET_PROMOTION_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$GITHUB_SHA" = "$YEET_PROMOTION_WORKFLOW_SHA" ]
+          [ "$(git rev-parse HEAD)" = "$YEET_PROMOTION_WORKFLOW_SHA" ]
+          git fetch --no-tags origin main
+          [ "$(git rev-parse origin/main)" = "$YEET_PROMOTION_WORKFLOW_SHA" ] || {
+            echo "main advanced after this reviewed workflow was loaded; refusing to execute different promotion scripts" >&2
+            exit 1
+          }
 
       - name: Install verification dependencies
         run: |
@@ -48,7 +75,7 @@ jobs:
           pipx install check-jsonschema==0.37.4
           echo "$HOME/.local/bin" >>"$GITHUB_PATH"
 
-      - name: Start from fresh origin main and write the candidate catalog
+      - name: Write the candidate catalog from reviewed main
         id: catalog
         env:
           GH_TOKEN: ${{ github.token }}
@@ -58,8 +85,6 @@ jobs:
           INTEGRATION_ATTESTATION_SHA256: ${{ inputs.integration_attestation_sha256 }}
         run: |
           set -euo pipefail
-          git fetch --no-tags origin main
-          git checkout --detach origin/main
           scripts/promote-firecracker-runtime.sh \
             --channel candidate --runtime-id "$RUNTIME_ID" \
             --manifest-sha256 "$MANIFEST_SHA256" \

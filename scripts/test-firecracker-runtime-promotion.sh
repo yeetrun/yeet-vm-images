@@ -16,7 +16,7 @@ fail() { echo "Firecracker runtime promotion test failed: $*" >&2; exit 1; }
 runtime_id=firecracker-v1.16.1-yeet-v1
 source_commit=89abcdef0123456789abcdef0123456789abcdef
 yeet_commit=76543210fedcba9876543210fedcba9876543210
-catalog="$repo_root/scripts/testdata/runtime-catalog-empty.json"
+empty_catalog="$repo_root/scripts/testdata/runtime-catalog-empty.json"
 fixtures="$tmp_dir/fixtures"; bin_dir="$tmp_dir/bin"; mkdir "$fixtures" "$bin_dir"
 cp "$repo_root/scripts/testdata/runtime-manifest-v1.16.1.json" "$fixtures/runtime-manifest.json"
 manifest_sha="$(sha256sum "$fixtures/runtime-manifest.json"|awk '{print $1}')"
@@ -87,6 +87,26 @@ else printf 'https://release-assets.githubusercontent.com/%s' "$name"; fi
 MOCK_CURL
 chmod +x "$bin_dir/verify-runtime" "$bin_dir/gh" "$bin_dir/curl"
 
+stable_runtime='{
+  "runtime_id": "firecracker-v1.15.0-yeet-v1",
+  "manifest_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.15.0-yeet-v1/runtime-manifest.json",
+  "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "upstream_version": "v1.15.0",
+  "support": "supported",
+  "integration_attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.15.0-yeet-v1-integration-123456780/runtime-attestation.json",
+  "integration_attestation_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "canary_attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.15.0-yeet-v1-canary-123456781/runtime-attestation.json",
+  "canary_attestation_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}'
+catalog="$tmp_dir/catalog-with-stable.json"
+jq --argjson stable "$stable_runtime" '
+  .architectures.amd64.runtimes=[$stable] |
+  .architectures.amd64.channels.stable={runtime_id:$stable.runtime_id,manifest_sha256:$stable.manifest_sha256}
+' "$empty_catalog" >"$catalog"
+"$schema_validator" --schemafile "$repo_root/schemas/firecracker-runtime-catalog.schema.json" "$catalog" >/dev/null
+"$repo_root/scripts/verify-runtime-catalog.sh" "$catalog"
+jq -c '.architectures.amd64.channels.stable' "$catalog" >"$tmp_dir/stable-before.json"
+
 promote() {
 	local input="$1" output="$2" scenario="${3:-success}" attestation_url
 	attestation_url="${4:-https://github.com/yeetrun/yeet-vm-images/releases/download/$runtime_id-integration-123456789/runtime-attestation.json}"
@@ -102,17 +122,27 @@ output="$tmp_dir/promoted.json"; promote "$catalog" "$output"
 "$schema_validator" --schemafile "$repo_root/schemas/firecracker-runtime-catalog.schema.json" "$output" >/dev/null
 "$repo_root/scripts/verify-runtime-catalog.sh" "$output"
 jq -e --arg runtime "$runtime_id" --arg manifest "$manifest_sha" --arg attestation "$attestation_sha" '
-  .architectures.amd64.channels.stable==null and
+  .architectures.amd64.channels.stable!=null and
   .architectures.amd64.channels.candidate=={runtime_id:$runtime,manifest_sha256:$manifest} and
-  (.architectures.amd64.runtimes|length)==1 and
-  .architectures.amd64.runtimes[0].runtime_id==$runtime and
-  .architectures.amd64.runtimes[0].manifest_sha256==$manifest and
-  .architectures.amd64.runtimes[0].integration_attestation_sha256==$attestation and
-  .architectures.amd64.runtimes[0].canary_attestation_url==null
+  (.architectures.amd64.runtimes|length)==2 and
+  ([.architectures.amd64.runtimes[]|select(.runtime_id==$runtime)]|length)==1 and
+  (.architectures.amd64.runtimes[]|select(.runtime_id==$runtime)).manifest_sha256==$manifest and
+  (.architectures.amd64.runtimes[]|select(.runtime_id==$runtime)).integration_attestation_sha256==$attestation and
+  (.architectures.amd64.runtimes[]|select(.runtime_id==$runtime)).canary_attestation_url==null
 ' "$output" >/dev/null || fail "candidate catalog transition differs"
+jq -c '.architectures.amd64.channels.stable' "$output" >"$tmp_dir/stable-after.json"
+cmp -s "$tmp_dir/stable-before.json" "$tmp_dir/stable-after.json" || fail "candidate promotion changed the non-null stable pointer"
 replay="$tmp_dir/replay.json"; promote "$output" "$replay"; cmp -s "$output" "$replay" || fail "exact candidate replay was not a no-op"
-jq '.architectures.amd64.runtimes[0].manifest_sha256=("c"*64)' "$output" >"$tmp_dir/conflict.json"
-if promote "$tmp_dir/conflict.json" "$tmp_dir/conflict-out.json" >/dev/null 2>&1; then fail "conflicting catalog entry was accepted"; fi
+jq --arg runtime "$runtime_id" '(.architectures.amd64.runtimes[]|select(.runtime_id==$runtime)).integration_attestation_sha256=("0"*64)' "$output" >"$tmp_dir/conflict.json"
+"$schema_validator" --schemafile "$repo_root/schemas/firecracker-runtime-catalog.schema.json" "$tmp_dir/conflict.json" >/dev/null || fail "same-subject evidence conflict fixture is not schema-valid"
+"$repo_root/scripts/verify-runtime-catalog.sh" "$tmp_dir/conflict.json" || fail "same-subject evidence conflict fixture violates catalog invariants"
+set +e
+conflict_message="$(promote "$tmp_dir/conflict.json" "$tmp_dir/conflict-out.json" 2>&1)"
+conflict_rc=$?
+set -e
+[ "$conflict_rc" -ne 0 ] || fail "conflicting catalog entry was accepted"
+grep -Fq 'catalog already contains a conflicting runtime entry' <<<"$conflict_message" || fail "same-subject evidence conflict did not reach the promoter conflict check"
+[ ! -e "$tmp_dir/conflict-out.json" ] || fail "same-subject evidence conflict wrote an output catalog"
 if promote "$catalog" "$tmp_dir/rejected-lookalike-url.json" success \
 	"https://githubXcom/yeetrun/yeet-vm-images/releases/download/$runtime_id-integration-123456789/runtime-attestation.json" >/dev/null 2>&1; then
 	fail "promotion accepted a lookalike attestation URL"

@@ -55,7 +55,7 @@ fi
 verify_runtime="${YEET_KVM_VERIFY_RUNTIME:-$repo_root/scripts/verify-published-firecracker-runtime.sh}"
 download_runtime="${YEET_KVM_DOWNLOAD_RUNTIME:-$repo_root/scripts/download-published-firecracker-runtime.sh}"
 download_guest="${YEET_KVM_DOWNLOAD_GUEST:-$repo_root/scripts/download-vm-image-release.sh}"
-download_kernel="${YEET_KVM_DOWNLOAD_KERNEL:-$repo_root/scripts/download-kernel-release.sh}"
+download_kernel="${YEET_KVM_DOWNLOAD_KERNEL:-$repo_root/scripts/download-published-kernel-release.sh}"
 for helper in "$verify_runtime" "$download_runtime" "$download_guest" "$download_kernel"; do
 	[ -x "$helper" ] || fail "required integration helper is not executable: $helper"
 done

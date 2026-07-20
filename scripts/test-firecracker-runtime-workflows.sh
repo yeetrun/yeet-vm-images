@@ -10,6 +10,7 @@ integration="$repo_root/.github/workflows/test-firecracker-runtime-kvm.yml"
 promotion="$repo_root/.github/workflows/promote-firecracker-runtime.yml"
 integration_gate="$repo_root/runtime-integration.json"
 readme="$repo_root/README.md"
+published_kernel_downloader="$repo_root/scripts/download-published-kernel-release.sh"
 published_verifier="$repo_root/scripts/verify-published-firecracker-runtime.sh"
 published_test="$repo_root/scripts/test-published-firecracker-runtime.sh"
 revision_resolver="$repo_root/scripts/resolve-firecracker-runtime-release.sh"
@@ -46,6 +47,7 @@ require_file "$integration"
 require_file "$promotion"
 require_file "$integration_gate"
 require_file "$readme"
+require_file "$published_kernel_downloader"
 require_file "$published_verifier"
 require_file "$published_test"
 
@@ -194,6 +196,7 @@ require_text "$integration" 'permission-administration: read' "integration token
 reject_text "$integration" 'permission-pull-requests:' "integration token has unnecessary pull-request permission"
 [ "$(grep -Fc 'steps.integration-app-token.outputs.token' "$integration")" = 1 ] || fail "integration App token is exposed outside the publication step"
 require_text "$integration" 'scripts/test-firecracker-runtime-kvm.sh' "integration KVM harness is missing"
+require_text "$repo_root/scripts/test-firecracker-runtime-kvm.sh" 'scripts/download-published-kernel-release.sh' "integration harness does not use the immutable published-kernel downloader"
 require_text "$integration" 'scripts/write-firecracker-runtime-attestation.sh' "integration attestation writer is missing"
 require_text "$integration" 'scripts/publish-firecracker-runtime-attestation.sh' "integration attestation publisher is missing"
 require_text "$integration" 'YEET_INTEGRATION_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}' "integration workflow repository identity is missing"
@@ -271,7 +274,17 @@ require_text "$promotion" 'permission-contents: write' "promotion token lacks Co
 require_text "$promotion" 'permission-pull-requests: write' "promotion token lacks Pull requests:write"
 [ "$(grep -Fc 'steps.promotion-app-token.outputs.token' "$promotion")" = 1 ] || fail "promotion App token is exposed outside the push/PR step"
 require_text "$promotion" 'git fetch --no-tags origin main' "promotion does not refresh origin/main"
-require_text "$promotion" 'git checkout --detach origin/main' "promotion does not start from fresh origin/main"
+reject_text "$promotion" 'git checkout --detach origin/main' "promotion silently executes scripts from a newly advanced main"
+require_text "$promotion" '          ref: ${{ job.workflow_sha }}' "promotion checkout is not pinned to the loaded workflow SHA"
+require_text "$promotion" 'YEET_PROMOTION_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}' "promotion workflow repository identity is missing"
+require_text "$promotion" 'YEET_PROMOTION_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}' "promotion workflow path identity is missing"
+require_text "$promotion" 'YEET_PROMOTION_WORKFLOW_REF: ${{ job.workflow_ref }}' "promotion workflow ref identity is missing"
+require_text "$promotion" 'YEET_PROMOTION_WORKFLOW_SHA: ${{ job.workflow_sha }}' "promotion workflow SHA identity is missing"
+require_text "$promotion" '[ "${GITHUB_JOB:-}" = promote-candidate ]' "promotion job ID is not checked"
+require_text "$promotion" 'repository=yeetrun/yeet-vm-images' "promotion repository identity is not checked"
+require_text "$promotion" 'workflow_ref="$repository/.github/workflows/promote-firecracker-runtime.yml@refs/heads/main"' "promotion main-only workflow ref is not checked"
+require_text "$promotion" '[ "$(git rev-parse HEAD)" = "$YEET_PROMOTION_WORKFLOW_SHA" ]' "promotion checkout is not bound to workflow SHA"
+require_text "$promotion" '[ "$(git rev-parse origin/main)" = "$YEET_PROMOTION_WORKFLOW_SHA" ]' "promotion does not fail when main advances beyond workflow SHA"
 require_text "$promotion" 'branch="promote/$RUNTIME_ID/candidate"' "promotion branch name differs"
 require_text "$promotion" 'git push origin "HEAD:refs/heads/$branch"' "promotion does not use a non-force push"
 reject_text "$promotion" '--force' "promotion contains a force push"
@@ -279,6 +292,64 @@ reject_text "$promotion" 'gh pr merge' "promotion auto-merges"
 require_text "$promotion" 'git diff --name-only HEAD^ HEAD' "promotion does not verify the exact committed path"
 require_text "$promotion" 'runtime-catalog.json' "promotion does not commit the runtime catalog"
 require_text "$promotion" 'scripts/promote-firecracker-runtime.sh' "promotion script is not used"
+
+validate_promotion_identity() {
+	python3 - "$1" <<'PY'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+required = [
+    "          ref: ${{ job.workflow_sha }}\n",
+    "          YEET_PROMOTION_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}\n",
+    "          YEET_PROMOTION_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}\n",
+    "          YEET_PROMOTION_WORKFLOW_REF: ${{ job.workflow_ref }}\n",
+    "          YEET_PROMOTION_WORKFLOW_SHA: ${{ job.workflow_sha }}\n",
+    '          [ "${GITHUB_JOB:-}" = promote-candidate ]\n',
+    "          repository=yeetrun/yeet-vm-images\n",
+    '          workflow_ref="$repository/.github/workflows/promote-firecracker-runtime.yml@refs/heads/main"\n',
+    '          [ "${GITHUB_WORKFLOW_REF:-}" = "$workflow_ref" ]\n',
+    '          [ "$YEET_PROMOTION_WORKFLOW_REPOSITORY" = "$repository" ]\n',
+    '          [ "$YEET_PROMOTION_WORKFLOW_FILE_PATH" = .github/workflows/promote-firecracker-runtime.yml ]\n',
+    '          [ "$YEET_PROMOTION_WORKFLOW_REF" = "$workflow_ref" ]\n',
+    '          [ "$(git rev-parse HEAD)" = "$YEET_PROMOTION_WORKFLOW_SHA" ]\n',
+    '          [ "$(git rev-parse origin/main)" = "$YEET_PROMOTION_WORKFLOW_SHA" ] || {\n',
+]
+for value in required:
+    if text.count(value) != 1:
+        raise SystemExit(f"promotion identity contract missing or duplicated: {value.strip()}")
+identity = text.find("      - name: Verify reviewed promotion workflow identity")
+token = text.find("      - name: Mint repository-scoped promotion token")
+if identity < 0 or token < 0 or identity >= token:
+    raise SystemExit("promotion identity check must complete before App-token minting")
+if "git checkout --detach origin/main" in text:
+    raise SystemExit("promotion must not execute scripts from a different origin/main commit")
+PY
+}
+validate_promotion_identity "$promotion" || fail "promotion identity contract is invalid"
+promotion_mutations="$tmp_dir/promotion-identity-mutations"
+mkdir -p "$promotion_mutations"
+cp "$promotion" "$promotion_mutations/ref.yml"
+sed -i.bak 's#@refs/heads/main#@refs/heads/review#' "$promotion_mutations/ref.yml" && rm "$promotion_mutations/ref.yml.bak"
+cp "$promotion" "$promotion_mutations/repository.yml"
+sed -i.bak 's#repository=yeetrun/yeet-vm-images#repository=other/repository#' "$promotion_mutations/repository.yml" && rm "$promotion_mutations/repository.yml.bak"
+cp "$promotion" "$promotion_mutations/path.yml"
+sed -i.bak 's#YEET_PROMOTION_WORKFLOW_FILE_PATH" = .github/workflows/promote-firecracker-runtime.yml#YEET_PROMOTION_WORKFLOW_FILE_PATH" = .github/workflows/other.yml#' "$promotion_mutations/path.yml" && rm "$promotion_mutations/path.yml.bak"
+cp "$promotion" "$promotion_mutations/job.yml"
+sed -i.bak 's#GITHUB_JOB:-}" = promote-candidate#GITHUB_JOB:-}" = other-job#' "$promotion_mutations/job.yml" && rm "$promotion_mutations/job.yml.bak"
+cp "$promotion" "$promotion_mutations/job-context.yml"
+sed -i.bak 's#YEET_PROMOTION_WORKFLOW_REPOSITORY: \${{ job.workflow_repository }}#YEET_PROMOTION_WORKFLOW_REPOSITORY: ${{ github.repository }}#' "$promotion_mutations/job-context.yml" && rm "$promotion_mutations/job-context.yml.bak"
+cp "$promotion" "$promotion_mutations/file-context.yml"
+sed -i.bak 's#YEET_PROMOTION_WORKFLOW_FILE_PATH: \${{ job.workflow_file_path }}#YEET_PROMOTION_WORKFLOW_FILE_PATH: ${{ github.workflow }}#' "$promotion_mutations/file-context.yml" && rm "$promotion_mutations/file-context.yml.bak"
+cp "$promotion" "$promotion_mutations/ref-context.yml"
+sed -i.bak 's#YEET_PROMOTION_WORKFLOW_REF: \${{ job.workflow_ref }}#YEET_PROMOTION_WORKFLOW_REF: ${{ github.workflow_ref }}#' "$promotion_mutations/ref-context.yml" && rm "$promotion_mutations/ref-context.yml.bak"
+cp "$promotion" "$promotion_mutations/sha-context.yml"
+sed -i.bak 's#YEET_PROMOTION_WORKFLOW_SHA: \${{ job.workflow_sha }}#YEET_PROMOTION_WORKFLOW_SHA: ${{ github.sha }}#' "$promotion_mutations/sha-context.yml" && rm "$promotion_mutations/sha-context.yml.bak"
+cp "$promotion" "$promotion_mutations/checkout.yml"
+sed -i.bak 's#ref: \${{ job.workflow_sha }}#ref: main#' "$promotion_mutations/checkout.yml" && rm "$promotion_mutations/checkout.yml.bak"
+for mutation in "$promotion_mutations"/*.yml; do
+	if validate_promotion_identity "$mutation" >/dev/null 2>&1; then fail "promotion identity mutation was accepted: $(basename "$mutation")"; fi
+done
 
 # The manual bootstrap is the sync workflow. No workflow may dispatch or call
 # the reusable build workflow except its approved local caller.
