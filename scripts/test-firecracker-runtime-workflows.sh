@@ -6,6 +6,9 @@ export LC_ALL=C
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build="$repo_root/.github/workflows/build-firecracker-runtime.yml"
 sync="$repo_root/.github/workflows/sync-latest-stable-firecracker.yml"
+integration="$repo_root/.github/workflows/test-firecracker-runtime-kvm.yml"
+promotion="$repo_root/.github/workflows/promote-firecracker-runtime.yml"
+integration_gate="$repo_root/runtime-integration.json"
 readme="$repo_root/README.md"
 published_verifier="$repo_root/scripts/verify-published-firecracker-runtime.sh"
 published_test="$repo_root/scripts/test-published-firecracker-runtime.sh"
@@ -39,6 +42,9 @@ reject_text() {
 
 require_file "$build"
 require_file "$sync"
+require_file "$integration"
+require_file "$promotion"
+require_file "$integration_gate"
 require_file "$readme"
 require_file "$published_verifier"
 require_file "$published_test"
@@ -163,6 +169,121 @@ jobs:
     uses: ./.github/workflows/build-firecracker-runtime.yml
 YAML
 if validate_callers "$mutation_root" >/dev/null 2>&1; then fail "second .yaml reusable-workflow caller mutation was accepted"; fi
+
+# Integration is started by the immutable runtime release event or an exact
+# manual recovery request. Bootstrap dispatches discovery, never the build job.
+require_text "$integration" '  release:' "integration release trigger is missing"
+require_text "$integration" '    types: [published]' "integration trigger is not release:published"
+require_text "$integration" '  workflow_dispatch:' "integration manual recovery trigger is missing"
+for input in runtime_id manifest_sha256 ubuntu_guest_release nixos_guest_release current_kernel_release previous_kernel_release yeet_ref; do
+	require_text "$integration" "      $input:" "integration workflow input is missing: $input"
+done
+require_text "$integration" 'startsWith(github.event.release.tag_name, '\''firecracker-v'\'')' "release path does not reject unrelated tags"
+require_text "$integration" 'github.event.release.prerelease == false' "release path does not reject prereleases"
+require_text "$integration" '!contains(github.event.release.tag_name, '\''-integration-'\'')' "integration evidence release recursion is not rejected"
+require_text "$integration" '!contains(github.event.release.tag_name, '\''-canary-'\'')' "canary evidence release recursion is not rejected"
+require_text "$integration" 'scripts/verify-published-firecracker-runtime.sh' "integration does not reverify the exact runtime release"
+require_text "$integration" 'runs-on: [self-hosted, linux, x64, kvm, yeet-runtime-integration]' "integration runner labels differ"
+require_text "$integration" '    environment: firecracker-runtime-integration-publish' "integration publishing environment is missing"
+require_text "$integration" '      group: firecracker-runtime-integration-publish' "integration publishing concurrency is missing"
+require_text "$integration" '      cancel-in-progress: false' "integration publication cancellation differs"
+require_text "$integration" $'permissions:\n  contents: read' "integration default token is not contents:read"
+require_text "$integration" "uses: actions/create-github-app-token@$app_token_sha" "integration App-token pin differs"
+require_text "$integration" 'permission-contents: write' "integration token lacks Contents:write"
+require_text "$integration" 'permission-administration: read' "integration token lacks immutable-release settings read access"
+reject_text "$integration" 'permission-pull-requests:' "integration token has unnecessary pull-request permission"
+[ "$(grep -Fc 'steps.integration-app-token.outputs.token' "$integration")" = 1 ] || fail "integration App token is exposed outside the publication step"
+require_text "$integration" 'scripts/test-firecracker-runtime-kvm.sh' "integration KVM harness is missing"
+require_text "$integration" 'scripts/write-firecracker-runtime-attestation.sh' "integration attestation writer is missing"
+require_text "$integration" 'scripts/publish-firecracker-runtime-attestation.sh' "integration attestation publisher is missing"
+require_text "$integration" 'YEET_INTEGRATION_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}' "integration workflow repository identity is missing"
+require_text "$integration" 'YEET_INTEGRATION_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}' "integration workflow path identity is missing"
+require_text "$integration" 'YEET_INTEGRATION_WORKFLOW_REF: ${{ job.workflow_ref }}' "integration workflow ref identity is missing"
+require_text "$integration" 'YEET_INTEGRATION_WORKFLOW_SHA: ${{ job.workflow_sha }}' "integration workflow SHA identity is missing"
+require_text "$integration" 'yeet-src/scripts/test-firecracker-runtime-integration.sh' "exact Yeet checkout integration driver is not required"
+reject_text "$integration" '/usr/local' "integration workflow depends on unversioned runner state"
+python3 - "$integration" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+match = re.search(
+    r"(?m)^      - name: Publish immutable integration evidence\n(?P<body>.*?)(?=^      - name:|\Z)",
+    text,
+    re.DOTALL,
+)
+if not match:
+    raise SystemExit("integration publication step is missing")
+body = match.group("body")
+required = {
+    "YEET_COMMIT": "${{ needs.normalize.outputs.yeet_ref }}",
+    "UBUNTU_GUEST_RELEASE": "${{ needs.normalize.outputs.ubuntu_guest_release }}",
+    "NIXOS_GUEST_RELEASE": "${{ needs.normalize.outputs.nixos_guest_release }}",
+    "CURRENT_KERNEL_RELEASE": "${{ needs.normalize.outputs.current_kernel_release }}",
+    "PREVIOUS_KERNEL_RELEASE": "${{ needs.normalize.outputs.previous_kernel_release }}",
+}
+for name, value in required.items():
+    if f"          {name}: {value}\n" not in body:
+        raise SystemExit(f"integration publication step does not bind {name}")
+PY
+
+jq -e '
+  keys == ["release_event", "schema_version"] and .schema_version == 1 and
+  (.release_event | keys == ["current_kernel_release", "enabled", "nixos_guest_release", "previous_kernel_release", "ubuntu_guest_release", "yeet_ref"]) and
+  .release_event.enabled == false and all(.release_event | del(.enabled)[]; . == null)
+' "$integration_gate" >/dev/null || fail "runtime integration activation gate is not closed and dormant"
+activation_filter='keys == ["release_event", "schema_version"] and .schema_version == 1 and
+  (.release_event | keys == ["current_kernel_release", "enabled", "nixos_guest_release", "previous_kernel_release", "ubuntu_guest_release", "yeet_ref"]) and
+  if .release_event.enabled == false then all(.release_event | del(.enabled)[]; . == null)
+  else .release_event.enabled == true and
+    (.release_event.ubuntu_guest_release | test("^ubuntu-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
+    (.release_event.nixos_guest_release | test("^nixos-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
+    (.release_event.current_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
+    (.release_event.previous_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
+    (.release_event.yeet_ref | test("^[0-9a-f]{40}$")) end'
+jq '.release_event={enabled:true,ubuntu_guest_release:"ubuntu-26.04-amd64-kernel-7.1.4-v29",nixos_guest_release:"nixos-26.05-amd64-kernel-7.1.4-v29",current_kernel_release:"kernel-linux-7.1.4-yeet-v1",previous_kernel_release:"kernel-linux-7.1.3-yeet-v1",yeet_ref:"76543210fedcba9876543210fedcba9876543210"}' "$integration_gate" >"$tmp_dir/enabled-integration.json"
+jq -e "$activation_filter" "$tmp_dir/enabled-integration.json" >/dev/null || fail "fully pinned activation gate was rejected"
+for mutation in partial-disabled partial-enabled latest-enabled unknown-enabled; do
+	case "$mutation" in
+		partial-disabled) jq '.release_event.ubuntu_guest_release="ubuntu-26.04-amd64-v29"' "$integration_gate" >"$tmp_dir/$mutation.json" ;;
+		partial-enabled) jq '.release_event.enabled=true' "$integration_gate" >"$tmp_dir/$mutation.json" ;;
+		latest-enabled) jq '.release_event.ubuntu_guest_release="ubuntu-26.04-amd64-latest"' "$tmp_dir/enabled-integration.json" >"$tmp_dir/$mutation.json" ;;
+		unknown-enabled) jq '.release_event.extra=true' "$tmp_dir/enabled-integration.json" >"$tmp_dir/$mutation.json" ;;
+	esac
+	if jq -e "$activation_filter" "$tmp_dir/$mutation.json" >/dev/null 2>&1; then fail "activation gate accepted mutation: $mutation"; fi
+done
+require_text "$integration" 'if .release_event.enabled == false' "integration workflow does not validate the dormant gate branch"
+require_text "$integration" 'then all(.release_event | del(.enabled)[]; . == null)' "disabled activation gate could expose partial values"
+require_text "$integration" 'else .release_event.enabled == true' "enabled activation gate is not explicit"
+
+# Candidate promotion is a reviewed pull request from a fresh main checkout.
+require_text "$promotion" '  workflow_dispatch:' "promotion manual trigger is missing"
+for input in runtime_id manifest_sha256 integration_attestation_url integration_attestation_sha256; do
+	require_text "$promotion" "      $input:" "promotion workflow input is missing: $input"
+done
+require_text "$promotion" '    environment: firecracker-runtime-promotion' "promotion environment is missing"
+require_text "$promotion" 'group: firecracker-runtime-promotion-${{ inputs.runtime_id }}-candidate' "per-runtime promotion concurrency is missing"
+require_text "$promotion" 'cancel-in-progress: false' "promotion cancellation policy differs"
+require_text "$promotion" $'permissions:\n  contents: read' "promotion default token is not contents:read"
+require_text "$promotion" "uses: actions/create-github-app-token@$app_token_sha" "promotion App-token pin differs"
+require_text "$promotion" 'permission-contents: write' "promotion token lacks Contents:write"
+require_text "$promotion" 'permission-pull-requests: write' "promotion token lacks Pull requests:write"
+[ "$(grep -Fc 'steps.promotion-app-token.outputs.token' "$promotion")" = 1 ] || fail "promotion App token is exposed outside the push/PR step"
+require_text "$promotion" 'git fetch --no-tags origin main' "promotion does not refresh origin/main"
+require_text "$promotion" 'git checkout --detach origin/main' "promotion does not start from fresh origin/main"
+require_text "$promotion" 'branch="promote/$RUNTIME_ID/candidate"' "promotion branch name differs"
+require_text "$promotion" 'git push origin "HEAD:refs/heads/$branch"' "promotion does not use a non-force push"
+reject_text "$promotion" '--force' "promotion contains a force push"
+reject_text "$promotion" 'gh pr merge' "promotion auto-merges"
+require_text "$promotion" 'git diff --name-only HEAD^ HEAD' "promotion does not verify the exact committed path"
+require_text "$promotion" 'runtime-catalog.json' "promotion does not commit the runtime catalog"
+require_text "$promotion" 'scripts/promote-firecracker-runtime.sh' "promotion script is not used"
+
+# The manual bootstrap is the sync workflow. No workflow may dispatch or call
+# the reusable build workflow except its approved local caller.
+reject_text "$integration" 'build-firecracker-runtime.yml' "integration calls the build workflow directly"
+reject_text "$promotion" 'build-firecracker-runtime.yml' "promotion calls the build workflow directly"
 publishers="$(rg -l --fixed-strings 'scripts/publish-firecracker-runtime-assets.sh' "$repo_root/.github/workflows" || true)"
 [ "$publishers" = "$build" ] || fail "runtime publisher has an alternate workflow call path"
 
@@ -178,14 +299,14 @@ jq -e '.next_release == "firecracker-v1.16.1-yeet-v2"' <<<"$allocation_fixture" 
 jq -e '.current_release == ""' <<<"$published_fixture" >/dev/null || fail "tag-only/draft v1 was treated as a published no-op"
 
 # Every external action is full-SHA pinned; the local workflow call is the sole exception.
-python3 - "$build" "$sync" "$checkout_sha" <<'PY'
+python3 - "$build" "$sync" "$integration" "$promotion" "$checkout_sha" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-checkout_sha = sys.argv[3]
+checkout_sha = sys.argv[5]
 checkout_count = 0
-for raw_path in sys.argv[1:3]:
+for raw_path in sys.argv[1:5]:
     path = Path(raw_path)
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         match = re.match(r"\s*-?\s*uses:\s*(\S+)\s*$", line)
@@ -201,8 +322,8 @@ for raw_path in sys.argv[1:3]:
             checkout_count += 1
             if action.group(2) != checkout_sha:
                 raise SystemExit(f"{path}:{number}: unexpected actions/checkout pin")
-if checkout_count != 2:
-    raise SystemExit(f"expected two pinned actions/checkout uses, found {checkout_count}")
+if checkout_count != 7:
+    raise SystemExit(f"expected exactly seven pinned actions/checkout uses, found {checkout_count}")
 PY
 
 # No mutable alias, overwrite, destructive cleanup, or catalog mutation path.

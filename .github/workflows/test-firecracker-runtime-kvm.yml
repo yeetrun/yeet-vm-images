@@ -1,0 +1,353 @@
+name: Test Firecracker runtime on KVM
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      runtime_id:
+        description: Exact immutable Firecracker runtime release ID.
+        required: true
+        type: string
+      manifest_sha256:
+        description: Exact SHA-256 of runtime-manifest.json.
+        required: true
+        type: string
+      ubuntu_guest_release:
+        description: Exact immutable Ubuntu guest release ID.
+        required: true
+        type: string
+      nixos_guest_release:
+        description: Exact immutable NixOS guest release ID.
+        required: true
+        type: string
+      current_kernel_release:
+        description: Exact immutable current kernel release ID.
+        required: true
+        type: string
+      previous_kernel_release:
+        description: Exact immutable previous kernel release ID.
+        required: true
+        type: string
+      yeet_ref:
+        description: Exact full Yeet commit containing the repository-owned integration driver.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firecracker-runtime-integration-${{ github.event_name == 'workflow_dispatch' && inputs.runtime_id || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    if: ${{ github.event_name == 'workflow_dispatch' || (startsWith(github.event.release.tag_name, 'firecracker-v') && !contains(github.event.release.tag_name, '-integration-') && !contains(github.event.release.tag_name, '-canary-') && github.event.release.draft == false && github.event.release.prerelease == false) }}
+    runs-on: ubuntu-24.04
+    outputs:
+      should_run: ${{ steps.inputs.outputs.should_run }}
+      runtime_id: ${{ steps.inputs.outputs.runtime_id }}
+      manifest_sha256: ${{ steps.inputs.outputs.manifest_sha256 }}
+      ubuntu_guest_release: ${{ steps.inputs.outputs.ubuntu_guest_release }}
+      nixos_guest_release: ${{ steps.inputs.outputs.nixos_guest_release }}
+      current_kernel_release: ${{ steps.inputs.outputs.current_kernel_release }}
+      previous_kernel_release: ${{ steps.inputs.outputs.previous_kernel_release }}
+      yeet_ref: ${{ steps.inputs.outputs.yeet_ref }}
+      harness_commit: ${{ steps.inputs.outputs.harness_commit }}
+    steps:
+      - name: Checkout the exact workflow commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ job.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install verification dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl git jq pipx python3
+          pipx install check-jsonschema==0.37.4
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Normalize and verify exact inputs
+        id: inputs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RUNTIME_ID: ${{ github.event.release.tag_name }}
+          MANUAL_RUNTIME_ID: ${{ inputs.runtime_id }}
+          MANUAL_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          MANUAL_UBUNTU_GUEST_RELEASE: ${{ inputs.ubuntu_guest_release }}
+          MANUAL_NIXOS_GUEST_RELEASE: ${{ inputs.nixos_guest_release }}
+          MANUAL_CURRENT_KERNEL_RELEASE: ${{ inputs.current_kernel_release }}
+          MANUAL_PREVIOUS_KERNEL_RELEASE: ${{ inputs.previous_kernel_release }}
+          MANUAL_YEET_REF: ${{ inputs.yeet_ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          harness_commit="$(git rev-parse HEAD)"
+          case "$harness_commit" in [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;; *) exit 1 ;; esac
+          [ "${#harness_commit}" = 40 ] || { echo "Workflow checkout is not a full commit" >&2; exit 1; }
+
+          if [ "$EVENT_NAME" = release ]; then
+            runtime_id="$EVENT_RUNTIME_ID"
+            if ! [[ "$runtime_id" =~ ^firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*$ ]]; then
+              echo "Published release is not a runtime candidate; no KVM job scheduled." >>"$GITHUB_STEP_SUMMARY"
+              echo "should_run=false" >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+            verification="$(scripts/verify-published-firecracker-runtime.sh "$runtime_id")"
+            manifest_sha256="$(jq -er '.manifest_sha256' <<<"$verification")"
+            jq -e '
+              keys == ["release_event", "schema_version"] and .schema_version == 1 and
+              (.release_event | keys == ["current_kernel_release", "enabled", "nixos_guest_release", "previous_kernel_release", "ubuntu_guest_release", "yeet_ref"]) and
+              if .release_event.enabled == false
+              then all(.release_event | del(.enabled)[]; . == null)
+              else .release_event.enabled == true and
+                (.release_event.ubuntu_guest_release | test("^ubuntu-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
+                (.release_event.nixos_guest_release | test("^nixos-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
+                (.release_event.current_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
+                (.release_event.previous_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
+                (.release_event.yeet_ref | test("^[0-9a-f]{40}$"))
+              end
+            ' runtime-integration.json >/dev/null || {
+              echo "runtime-integration.json is not a closed dormant or fully pinned configuration" >&2
+              exit 1
+            }
+            if [ "$(jq -r '.release_event.enabled' runtime-integration.json)" != true ]; then
+              {
+                echo "### Firecracker runtime integration is dormant"
+                echo
+                echo "Verified immutable runtime \`$runtime_id\` with manifest \`$manifest_sha256\`."
+                echo "The repository-owned Yeet integration driver and reviewed exact inputs are not enabled. Start a new manual recovery run after Catch runtime management lands."
+              } >>"$GITHUB_STEP_SUMMARY"
+              echo "should_run=false" >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+            ubuntu_guest_release="$(jq -er '.release_event.ubuntu_guest_release' runtime-integration.json)"
+            nixos_guest_release="$(jq -er '.release_event.nixos_guest_release' runtime-integration.json)"
+            current_kernel_release="$(jq -er '.release_event.current_kernel_release' runtime-integration.json)"
+            previous_kernel_release="$(jq -er '.release_event.previous_kernel_release' runtime-integration.json)"
+            yeet_ref="$(jq -er '.release_event.yeet_ref' runtime-integration.json)"
+          else
+            runtime_id="$MANUAL_RUNTIME_ID"
+            manifest_sha256="$MANUAL_MANIFEST_SHA256"
+            ubuntu_guest_release="$MANUAL_UBUNTU_GUEST_RELEASE"
+            nixos_guest_release="$MANUAL_NIXOS_GUEST_RELEASE"
+            current_kernel_release="$MANUAL_CURRENT_KERNEL_RELEASE"
+            previous_kernel_release="$MANUAL_PREVIOUS_KERNEL_RELEASE"
+            yeet_ref="$MANUAL_YEET_REF"
+            verification="$(scripts/verify-published-firecracker-runtime.sh "$runtime_id")"
+            [ "$(jq -er '.manifest_sha256' <<<"$verification")" = "$manifest_sha256" ] || {
+              echo "Manual recovery manifest digest differs from the immutable release" >&2
+              exit 1
+            }
+          fi
+          [[ "$runtime_id" =~ ^firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*$ ]] || exit 1
+          [[ "$manifest_sha256" =~ ^[0-9a-f]{64}$ ]] || exit 1
+          [[ "$ubuntu_guest_release" =~ ^ubuntu-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$ ]] || exit 1
+          [[ "$nixos_guest_release" =~ ^nixos-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$ ]] || exit 1
+          [[ "$current_kernel_release" =~ ^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$ ]] || exit 1
+          [[ "$previous_kernel_release" =~ ^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$ ]] || exit 1
+          [[ "$yeet_ref" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          {
+            echo "should_run=true"
+            echo "runtime_id=$runtime_id"
+            echo "manifest_sha256=$manifest_sha256"
+            echo "ubuntu_guest_release=$ubuntu_guest_release"
+            echo "nixos_guest_release=$nixos_guest_release"
+            echo "current_kernel_release=$current_kernel_release"
+            echo "previous_kernel_release=$previous_kernel_release"
+            echo "yeet_ref=$yeet_ref"
+            echo "harness_commit=$harness_commit"
+          } >>"$GITHUB_OUTPUT"
+
+  kvm:
+    needs: normalize
+    if: ${{ needs.normalize.outputs.should_run == 'true' }}
+    runs-on: [self-hosted, linux, x64, kvm, yeet-runtime-integration]
+    timeout-minutes: 120
+    outputs:
+      harness_commit: ${{ needs.normalize.outputs.harness_commit }}
+    steps:
+      - name: Checkout the exact harness commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ needs.normalize.outputs.harness_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout the exact Yeet commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          repository: yeetrun/yeet
+          ref: ${{ needs.normalize.outputs.yeet_ref }}
+          path: yeet-src
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify checked-out commits
+        env:
+          HARNESS_COMMIT: ${{ needs.normalize.outputs.harness_commit }}
+          YEET_COMMIT: ${{ needs.normalize.outputs.yeet_ref }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$HARNESS_COMMIT" ]
+          [ "$(git -C yeet-src rev-parse HEAD)" = "$YEET_COMMIT" ]
+          [ -x yeet-src/scripts/test-firecracker-runtime-integration.sh ] || {
+            echo "The exact Yeet commit does not contain scripts/test-firecracker-runtime-integration.sh. Complete Catch runtime management and start a new manual recovery run." >&2
+            exit 1
+          }
+
+      - name: Check KVM runner prerequisites and execute the pinned matrix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNTIME_ID: ${{ needs.normalize.outputs.runtime_id }}
+          MANIFEST_SHA256: ${{ needs.normalize.outputs.manifest_sha256 }}
+          UBUNTU_GUEST_RELEASE: ${{ needs.normalize.outputs.ubuntu_guest_release }}
+          NIXOS_GUEST_RELEASE: ${{ needs.normalize.outputs.nixos_guest_release }}
+          CURRENT_KERNEL_RELEASE: ${{ needs.normalize.outputs.current_kernel_release }}
+          PREVIOUS_KERNEL_RELEASE: ${{ needs.normalize.outputs.previous_kernel_release }}
+          YEET_COMMIT: ${{ needs.normalize.outputs.yeet_ref }}
+          YEET_KVM_YEET_SOURCE_DIR: ${{ github.workspace }}/yeet-src
+        run: |
+          set -euo pipefail
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "started_at=$started_at" >>"$GITHUB_ENV"
+          scripts/test-firecracker-runtime-kvm.sh \
+            --runtime-release "$RUNTIME_ID" \
+            --runtime-manifest-sha256 "$MANIFEST_SHA256" \
+            --ubuntu-guest-release "$UBUNTU_GUEST_RELEASE" \
+            --nixos-guest-release "$NIXOS_GUEST_RELEASE" \
+            --current-kernel-release "$CURRENT_KERNEL_RELEASE" \
+            --previous-kernel-release "$PREVIOUS_KERNEL_RELEASE" \
+            --yeet-ref "$YEET_COMMIT" \
+            --work-dir "$RUNNER_TEMP/firecracker-runtime-$GITHUB_RUN_ID" \
+            --matrix-out "$RUNNER_TEMP/runtime-matrix.json"
+
+      - name: Write exact integration evidence
+        env:
+          RUNTIME_ID: ${{ needs.normalize.outputs.runtime_id }}
+          MANIFEST_SHA256: ${{ needs.normalize.outputs.manifest_sha256 }}
+          HARNESS_COMMIT: ${{ needs.normalize.outputs.harness_commit }}
+          YEET_COMMIT: ${{ needs.normalize.outputs.yeet_ref }}
+          UBUNTU_GUEST_RELEASE: ${{ needs.normalize.outputs.ubuntu_guest_release }}
+          NIXOS_GUEST_RELEASE: ${{ needs.normalize.outputs.nixos_guest_release }}
+          CURRENT_KERNEL_RELEASE: ${{ needs.normalize.outputs.current_kernel_release }}
+          PREVIOUS_KERNEL_RELEASE: ${{ needs.normalize.outputs.previous_kernel_release }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/runtime-attestation"
+          scripts/write-firecracker-runtime-attestation.sh \
+            --runtime-id "$RUNTIME_ID" --manifest-sha256 "$MANIFEST_SHA256" \
+            --source-commit "$HARNESS_COMMIT" --workflow-run "$GITHUB_RUN_ID" \
+            --yeet-commit "$YEET_COMMIT" \
+            --ubuntu-guest-release "$UBUNTU_GUEST_RELEASE" \
+            --nixos-guest-release "$NIXOS_GUEST_RELEASE" \
+            --current-kernel-release "$CURRENT_KERNEL_RELEASE" \
+            --previous-kernel-release "$PREVIOUS_KERNEL_RELEASE" \
+            --matrix-file "$RUNNER_TEMP/runtime-matrix.json" \
+            --started-at "$started_at" --completed-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --out "$RUNNER_TEMP/runtime-attestation/runtime-attestation.json"
+          (cd "$RUNNER_TEMP/runtime-attestation" && sha256sum runtime-attestation.json | awk '{print $1 "  runtime-attestation.json"}' >runtime-attestation.sha256)
+
+      - name: Transfer evidence to the protected publisher
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: firecracker-runtime-integration-${{ github.run_id }}
+          path: ${{ runner.temp }}/runtime-attestation
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-firecracker-runtime-integration:
+    needs: [normalize, kvm]
+    if: ${{ needs.normalize.outputs.should_run == 'true' && needs.kvm.result == 'success' }}
+    runs-on: ubuntu-24.04
+    environment: firecracker-runtime-integration-publish
+    permissions:
+      contents: read
+    concurrency:
+      group: firecracker-runtime-integration-publish
+      cancel-in-progress: false
+    outputs:
+      attestation_url: ${{ steps.publish.outputs.attestation_url }}
+      attestation_sha256: ${{ steps.publish.outputs.attestation_sha256 }}
+    steps:
+      - name: Checkout the exact harness commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ needs.normalize.outputs.harness_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download passed evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: firecracker-runtime-integration-${{ github.run_id }}
+          path: dist/runtime-attestation
+
+      - name: Install verification dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y jq pipx python3
+          pipx install check-jsonschema==0.37.4
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Mint repository-scoped integration publication token
+        id: integration-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.YEET_RUNTIME_GITHUB_APP_CLIENT_ID }}
+          private-key: ${{ secrets.YEET_RUNTIME_GITHUB_APP_PRIVATE_KEY }}
+          owner: yeetrun
+          repositories: yeet-vm-images
+          permission-administration: read
+          permission-contents: write
+
+      - name: Publish immutable integration evidence
+        id: publish
+        env:
+          GH_TOKEN: ${{ steps.integration-app-token.outputs.token }}
+          RUNTIME_ID: ${{ needs.normalize.outputs.runtime_id }}
+          MANIFEST_SHA256: ${{ needs.normalize.outputs.manifest_sha256 }}
+          HARNESS_COMMIT: ${{ needs.normalize.outputs.harness_commit }}
+          YEET_COMMIT: ${{ needs.normalize.outputs.yeet_ref }}
+          UBUNTU_GUEST_RELEASE: ${{ needs.normalize.outputs.ubuntu_guest_release }}
+          NIXOS_GUEST_RELEASE: ${{ needs.normalize.outputs.nixos_guest_release }}
+          CURRENT_KERNEL_RELEASE: ${{ needs.normalize.outputs.current_kernel_release }}
+          PREVIOUS_KERNEL_RELEASE: ${{ needs.normalize.outputs.previous_kernel_release }}
+          YEET_INTEGRATION_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          YEET_INTEGRATION_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          YEET_INTEGRATION_WORKFLOW_REF: ${{ job.workflow_ref }}
+          YEET_INTEGRATION_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$HARNESS_COMMIT" ]
+          scripts/publish-firecracker-runtime-attestation.sh \
+            --runtime-id "$RUNTIME_ID" --manifest-sha256 "$MANIFEST_SHA256" \
+            --target "$HARNESS_COMMIT" --run-id "$GITHUB_RUN_ID" \
+            --yeet-commit "$YEET_COMMIT" \
+            --ubuntu-guest-release "$UBUNTU_GUEST_RELEASE" \
+            --nixos-guest-release "$NIXOS_GUEST_RELEASE" \
+            --current-kernel-release "$CURRENT_KERNEL_RELEASE" \
+            --previous-kernel-release "$PREVIOUS_KERNEL_RELEASE" \
+            --attestation dist/runtime-attestation/runtime-attestation.json \
+            --checksum dist/runtime-attestation/runtime-attestation.sha256
+          attestation_sha256="$(sha256sum dist/runtime-attestation/runtime-attestation.json | awk '{print $1}')"
+          attestation_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$RUNTIME_ID-integration-$GITHUB_RUN_ID/runtime-attestation.json"
+          {
+            echo "attestation_url=$attestation_url"
+            echo "attestation_sha256=$attestation_sha256"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Report integration publication failure
+        if: ${{ failure() }}
+        run: |
+          {
+            echo "### Firecracker runtime integration publication failed"
+            echo
+            echo "The partial tag or draft is preserved. Start a new manual recovery run so the evidence receives a new run ID."
+          } >>"$GITHUB_STEP_SUMMARY"
+          exit 1

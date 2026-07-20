@@ -1,0 +1,134 @@
+name: Promote Firecracker runtime candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_id:
+        description: Exact immutable Firecracker runtime ID.
+        required: true
+        type: string
+      manifest_sha256:
+        description: Exact runtime manifest SHA-256.
+        required: true
+        type: string
+      integration_attestation_url:
+        description: Exact immutable integration attestation URL.
+        required: true
+        type: string
+      integration_attestation_sha256:
+        description: Exact integration attestation SHA-256.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firecracker-runtime-promotion-${{ inputs.runtime_id }}-candidate
+  cancel-in-progress: false
+
+jobs:
+  promote-candidate:
+    runs-on: ubuntu-24.04
+    environment: firecracker-runtime-promotion
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout workflow source without credentials
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install verification dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl git jq pipx python3
+          pipx install check-jsonschema==0.37.4
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Start from fresh origin main and write the candidate catalog
+        id: catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNTIME_ID: ${{ inputs.runtime_id }}
+          MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          INTEGRATION_ATTESTATION_URL: ${{ inputs.integration_attestation_url }}
+          INTEGRATION_ATTESTATION_SHA256: ${{ inputs.integration_attestation_sha256 }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git checkout --detach origin/main
+          scripts/promote-firecracker-runtime.sh \
+            --channel candidate --runtime-id "$RUNTIME_ID" \
+            --manifest-sha256 "$MANIFEST_SHA256" \
+            --integration-attestation-url "$INTEGRATION_ATTESTATION_URL" \
+            --integration-attestation-sha256 "$INTEGRATION_ATTESTATION_SHA256" \
+            --catalog-in runtime-catalog.json --catalog-out "$RUNNER_TEMP/runtime-catalog.json"
+          if cmp -s runtime-catalog.json "$RUNNER_TEMP/runtime-catalog.json"; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            echo "The exact candidate entry and pointer are already promoted; verified no-op." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          mv "$RUNNER_TEMP/runtime-catalog.json" runtime-catalog.json
+          scripts/verify-runtime-catalog.sh runtime-catalog.json
+          [ "$(git diff --name-only)" = runtime-catalog.json ] || {
+            echo "Promotion changed a path other than runtime-catalog.json" >&2
+            exit 1
+          }
+          echo "changed=true" >>"$GITHUB_OUTPUT"
+
+      - name: Mint repository-scoped promotion token
+        if: ${{ steps.catalog.outputs.changed == 'true' }}
+        id: promotion-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.YEET_RUNTIME_GITHUB_APP_CLIENT_ID }}
+          private-key: ${{ secrets.YEET_RUNTIME_GITHUB_APP_PRIVATE_KEY }}
+          owner: yeetrun
+          repositories: yeet-vm-images
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Commit, push, and open the reviewed candidate PR
+        if: ${{ steps.catalog.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.promotion-app-token.outputs.token }}
+          RUNTIME_ID: ${{ inputs.runtime_id }}
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN
+          branch="promote/$RUNTIME_ID/candidate"
+          if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+            echo "Promotion branch already exists: $branch. Inspect or close the existing attempt before starting a new run." >&2
+            exit 1
+          fi
+          if [ "$(gh pr list --repo "$GITHUB_REPOSITORY" --state all --head "$branch" --json number --jq 'length')" != 0 ]; then
+            echo "A promotion PR already exists for $branch. Inspect the existing attempt before starting a new run." >&2
+            exit 1
+          fi
+          git switch -c "$branch"
+          git config user.name yeet-runtime-promotion[bot]
+          git config user.email 0+yeet-runtime-promotion[bot]@users.noreply.github.com
+          git add -- runtime-catalog.json
+          git commit -m "runtime: list $RUNTIME_ID as candidate"
+          [ "$(git diff --name-only HEAD^ HEAD)" = runtime-catalog.json ] || {
+            echo "Promotion commit contains an unexpected path" >&2
+            exit 1
+          }
+          gh auth setup-git
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+            --title "runtime: list $RUNTIME_ID as candidate" \
+            --body "Lists the exact immutable runtime and passed integration evidence as the candidate channel. Stable is unchanged."
+
+      - name: Report promotion failure
+        if: ${{ failure() }}
+        run: |
+          {
+            echo "### Firecracker runtime candidate promotion failed"
+            echo
+            echo "Inspect any preserved branch or PR before starting a new promotion run. Nothing was force-pushed, merged, or written directly to main."
+          } >>"$GITHUB_STEP_SUMMARY"
+          exit 1

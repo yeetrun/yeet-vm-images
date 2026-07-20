@@ -139,6 +139,8 @@ done
 [ "$object_sha" = "$provenance_commit" ] || fail "runtime tag does not resolve to the manifest provenance commit"
 
 manifest_sha256="$(sha256sum "$bundle/runtime-manifest.json" | awk '{print $1}')"
+verified_assets="$(jq -s 'sort_by(.name)' "$tmp_dir"/record-*.json)"
 jq -n --arg runtime_id "$runtime_id" --argjson release_id "$release_id" \
 	--arg provenance_commit "$provenance_commit" --arg manifest_sha256 "$manifest_sha256" \
-	'{runtime_id:$runtime_id,release_id:$release_id,provenance_commit:$provenance_commit,manifest_sha256:$manifest_sha256}'
+	--argjson assets "$verified_assets" \
+	'{runtime_id:$runtime_id,release_id:$release_id,provenance_commit:$provenance_commit,manifest_sha256:$manifest_sha256,assets:$assets}'

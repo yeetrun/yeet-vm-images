@@ -10,6 +10,8 @@
     "subject",
     "runner",
     "source",
+    "tested_yeet",
+    "artifacts",
     "matrix",
     "started_at",
     "completed_at",
@@ -75,6 +77,51 @@
         "workflow_run": {
           "type": "string",
           "pattern": "^[1-9][0-9]*$"
+        }
+      }
+    },
+    "tested_yeet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit"
+      ],
+      "properties": {
+        "repository": {
+          "const": "yeetrun/yeet"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ubuntu_guest_release",
+        "nixos_guest_release",
+        "current_kernel_release",
+        "previous_kernel_release"
+      ],
+      "properties": {
+        "ubuntu_guest_release": {
+          "type": "string",
+          "pattern": "^ubuntu-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$"
+        },
+        "nixos_guest_release": {
+          "type": "string",
+          "pattern": "^nixos-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$"
+        },
+        "current_kernel_release": {
+          "type": "string",
+          "pattern": "^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$"
+        },
+        "previous_kernel_release": {
+          "type": "string",
+          "pattern": "^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$"
         }
       }
     },

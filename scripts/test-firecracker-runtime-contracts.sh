@@ -97,6 +97,13 @@ attestation_filter='
   .source.repository == "yeetrun/yeet-vm-images" and
   (.source.commit | commit) and
   (.source.workflow_run | type == "string" and test("^[1-9][0-9]*$")) and
+  .tested_yeet.repository == "yeetrun/yeet" and
+  (.tested_yeet.commit | commit) and
+  (.artifacts | keys == ["current_kernel_release", "nixos_guest_release", "previous_kernel_release", "ubuntu_guest_release"]) and
+  (.artifacts.ubuntu_guest_release | test("^ubuntu-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
+  (.artifacts.nixos_guest_release | test("^nixos-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
+  (.artifacts.current_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
+  (.artifacts.previous_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
   (.matrix | keys == ["current_kernel", "custom_roots", "jailer_drop", "nixos", "previous_kernel", "raw", "ubuntu", "zfs"]) and
   all(.matrix[]; . == "passed") and
   (.started_at | type == "string" and fromdateiso8601) and
@@ -218,6 +225,8 @@ jq -e '
   .properties.subject.additionalProperties == false and
   .properties.runner.additionalProperties == false and
   .properties.source.additionalProperties == false and
+  .properties.tested_yeet.additionalProperties == false and
+  .properties.artifacts.additionalProperties == false and
   .properties.matrix.additionalProperties == false
 ' "$attestation_schema" >/dev/null
 
@@ -396,6 +405,19 @@ assert_attestation_schema_rejected "missing attestation subject digest" "$tmp_di
 jq 'del(.matrix.jailer_drop)' \
 	"$runtime_attestation" >"$tmp_dir/missing-attestation-matrix-cell.json"
 assert_attestation_schema_rejected "missing integration matrix cell" "$tmp_dir/missing-attestation-matrix-cell.json"
+
+jq 'del(.tested_yeet)' \
+	"$runtime_attestation" >"$tmp_dir/missing-tested-yeet.json"
+assert_attestation_schema_rejected "missing tested Yeet identity" "$tmp_dir/missing-tested-yeet.json"
+
+jq '.artifacts.ubuntu_guest_release = "ubuntu-26.04-amd64-latest"' \
+	"$runtime_attestation" >"$tmp_dir/mutable-guest-alias.json"
+assert_attestation_schema_rejected "mutable guest alias" "$tmp_dir/mutable-guest-alias.json"
+
+jq '.artifacts.ubuntu_guest_release = "ubuntu-24.04-amd64-v11"
+  | .artifacts.nixos_guest_release = "nixos-24.11-amd64-v15"' \
+	"$runtime_attestation" >"$tmp_dir/legacy-immutable-guests.json"
+schema_validate "$attestation_schema" "$tmp_dir/legacy-immutable-guests.json"
 
 jq '.unexpected = "hostile"' \
 	"$runtime_attestation" >"$tmp_dir/attestation-unknown-root-field.json"

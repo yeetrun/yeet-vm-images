@@ -224,6 +224,35 @@ repository boundary includes repository administrators because they can change
 workflow and Environment configuration; this automation does not claim to
 serialize independent administrator actions.
 
+Runtime integration is tracked separately from candidate publication. The
+`test-firecracker-runtime-kvm.yml` workflow accepts only an exact runtime ID and
+manifest digest, exact immutable Ubuntu/NixOS guest and current/previous kernel
+release IDs, and a full Yeet commit. It checks out that Yeet commit and requires
+its repository-owned `scripts/test-firecracker-runtime-integration.sh` driver;
+there is no runner-installed helper or direct-Firecracker fallback. The driver
+lands with Catch runtime management, so `runtime-integration.json` is currently
+a closed dormant gate: `enabled` is false and all release-event inputs are
+null. Enabling it requires a reviewed commit that supplies every exact input.
+Until then, native runtime release events are verified and reported without
+scheduling a KVM runner, while a new manual recovery run can provide the exact
+inputs after the driver exists.
+
+A passed run publishes exactly `runtime-attestation.json` and
+`runtime-attestation.sha256` in a new immutable
+`<runtime-id>-integration-<run-id>` release. The attestation binds the runtime
+digest, harness commit, tested Yeet commit, four immutable guest/kernel IDs, and
+the passed evidence dimensions. Publication uses the protected
+`firecracker-runtime-integration-publish` Environment and a repository-scoped
+App token only for the immutable release transaction. A partial tag or draft is
+preserved; recovery starts a new workflow run and therefore uses a new run ID.
+
+Candidate listing is also deliberate. `promote-firecracker-runtime.yml`
+re-verifies the immutable runtime and integration evidence, changes only
+`runtime-catalog.json`, and opens `promote/<runtime-id>/candidate` as a reviewed
+pull request. It never pushes to `main`, force-pushes, merges the PR, or changes
+the stable pointer. The commit that adds this dormant machinery does not enable
+credentials, protected Environments, a workflow run, or live KVM validation.
+
 Detailed workflow inputs live in `.github/workflows/`. The README describes
 the release model; the workflow files are the source of truth for dispatch
 parameters.

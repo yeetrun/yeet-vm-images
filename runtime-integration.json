@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "release_event": {
+    "enabled": false,
+    "ubuntu_guest_release": null,
+    "nixos_guest_release": null,
+    "current_kernel_release": null,
+    "previous_kernel_release": null,
+    "yeet_ref": null
+  }
+}
