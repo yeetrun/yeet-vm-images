@@ -71,7 +71,7 @@ if [ "$test_mode" != 1 ]; then
 	fi
 	command -v zfs >/dev/null 2>&1 || fail "ZFS tools are required"
 	"${privilege[@]}" zfs list -H >/dev/null || fail "ZFS is not usable"
-	test_user="${YEET_KVM_TEST_USER:-yeet-runtime-test}"
+	test_user="${YEET_KVM_TEST_USER:-yeet-vm}"
 	test_uid="$(id -u "$test_user" 2>/dev/null || true)"
 	test_gid="$(id -g "$test_user" 2>/dev/null || true)"
 	[ -n "$test_uid" ] && [ "$test_uid" -gt 0 ] && [ -n "$test_gid" ] && [ "$test_gid" -gt 0 ] || fail "dedicated non-root test identity is missing"
@@ -79,7 +79,7 @@ if [ "$test_mode" != 1 ]; then
 	[ -d "$yeet_source/.git" ] || fail "checked-out Yeet source is missing"
 	[ "$(git -C "$yeet_source" rev-parse HEAD)" = "$yeet_ref" ] || fail "checked-out Yeet commit differs from --yeet-ref"
 else
-	test_user=yeet-runtime-test test_uid=20001 test_gid=20001
+	test_user=yeet-vm test_uid=20001 test_gid=20001
 	yeet_source="${YEET_KVM_YEET_SOURCE_DIR:-$work_dir/yeet-source}"
 	mkdir -p "$yeet_source"
 fi
@@ -117,7 +117,11 @@ run_case() {
 		--yeet-source "$yeet_source" --yeet-commit "$yeet_ref"
 	)
 	for assertion in "${shared_assertions[@]}"; do args+=(--assert "$assertion"); done
-	"$case_runner" "${args[@]}"
+	if [ "$test_mode" = 1 ]; then
+		"$case_runner" "${args[@]}"
+	else
+		"${privilege[@]}" "$case_runner" "${args[@]}"
+	fi
 }
 
 run_case ubuntu-current "$ubuntu_dir" "$current_kernel_dir" raw "$work_dir/data-default" "$work_dir/service-ubuntu"

@@ -267,6 +267,7 @@ done
 for assertion in api-ready boot natural-reboot network-ready disk-snapshot-restore cleanup jailer-uid-gid-drop no-memory-snapshot; do
 	[ "$(grep -Fc -- "--assert $assertion" "$case_log")" = 7 ] || fail "shared assertion missing from a scenario: $assertion"
 done
+[ "$(grep -Fc -- "--test-user yeet-vm" "$case_log")" = 7 ] || fail "KVM harness did not require the production yeet-vm runtime identity"
 if grep -Eq '(^| )firecracker( |$)|direct-firecracker' "$case_log"; then fail "KVM harness exposed a direct Firecracker fallback"; fi
 jq -e 'keys == ["current_kernel", "custom_roots", "jailer_drop", "nixos", "previous_kernel", "raw", "ubuntu", "zfs"] and all(.[]; . == "passed")' "$matrix_out" >/dev/null
 
