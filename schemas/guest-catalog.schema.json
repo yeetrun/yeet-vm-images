@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yeetrun/yeet-vm-images/schemas/guest-catalog.schema.json",
+  "title": "Yeet VM guest base catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "guest_bases", "channels"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "guest_bases": { "type": "array", "items": { "$ref": "#/$defs/guest_base" } },
+    "channels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nixos-26.05-amd64", "ubuntu-26.04-amd64"],
+      "properties": {
+        "nixos-26.05-amd64": { "$ref": "#/$defs/channels" },
+        "ubuntu-26.04-amd64": { "$ref": "#/$defs/channels" }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "guest_base_id": { "type": "string", "pattern": "^guest-(ubuntu|nixos)-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$" },
+    "guest_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["guest_base_id", "os", "os_version", "architecture", "manifest_url", "manifest_sha256"],
+      "properties": {
+        "guest_base_id": { "$ref": "#/$defs/guest_base_id" },
+        "os": { "enum": ["ubuntu", "nixos"] },
+        "os_version": { "type": "string", "pattern": "^[0-9]+[.][0-9]+$" },
+        "architecture": { "const": "amd64" },
+        "manifest_url": { "type": "string", "pattern": "^https://github[.]com/yeetrun/yeet-vm-images/releases/download/guest-(ubuntu|nixos)-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*/guest-manifest[.]json$" },
+        "manifest_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "pointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["guest_base_id", "manifest_sha256"],
+      "properties": {
+        "guest_base_id": { "$ref": "#/$defs/guest_base_id" },
+        "manifest_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "channels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stable", "candidate"],
+      "properties": {
+        "stable": { "anyOf": [{ "$ref": "#/$defs/pointer" }, { "type": "null" }] },
+        "candidate": { "anyOf": [{ "$ref": "#/$defs/pointer" }, { "type": "null" }] }
+      }
+    }
+  }
+}

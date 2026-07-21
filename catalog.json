@@ -22,5 +22,10 @@
       "metadata_driver": "nixos",
       "capabilities": ["guest_init", "guest_agent", "rsync"]
     }
-  ]
+  ],
+  "component_catalogs": {
+    "guest_bases": "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/guest-catalog.json",
+    "kernels": "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/kernel-catalog.json",
+    "runtimes": "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/runtime-catalog.json"
+  }
 }

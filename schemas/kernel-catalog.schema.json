@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yeetrun/yeet-vm-images/schemas/kernel-catalog.schema.json",
+  "title": "Yeet VM kernel catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kernels", "channels"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kernels": { "type": "array", "items": { "$ref": "#/$defs/kernel" } },
+    "channels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amd64"],
+      "properties": { "amd64": { "$ref": "#/$defs/channels" } }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "kernel_id": { "type": "string", "pattern": "^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$" },
+    "kernel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kernel_id", "upstream_version", "packaging_revision", "architecture", "manifest_url", "manifest_sha256"],
+      "properties": {
+        "kernel_id": { "$ref": "#/$defs/kernel_id" },
+        "upstream_version": { "type": "string", "pattern": "^[0-9]+[.][0-9]+([.][0-9]+)*$" },
+        "packaging_revision": { "type": "integer", "minimum": 1 },
+        "architecture": { "const": "amd64" },
+        "manifest_url": { "type": "string", "pattern": "^https://github[.]com/yeetrun/yeet-vm-images/releases/download/kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*/kernel-manifest[.]json$" },
+        "manifest_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "pointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kernel_id", "manifest_sha256"],
+      "properties": {
+        "kernel_id": { "$ref": "#/$defs/kernel_id" },
+        "manifest_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "channels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stable", "candidate"],
+      "properties": {
+        "stable": { "anyOf": [{ "$ref": "#/$defs/pointer" }, { "type": "null" }] },
+        "candidate": { "anyOf": [{ "$ref": "#/$defs/pointer" }, { "type": "null" }] }
+      }
+    }
+  }
+}

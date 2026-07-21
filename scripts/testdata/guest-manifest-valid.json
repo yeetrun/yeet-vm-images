@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "guest_base_id": "guest-ubuntu-26.04-amd64-v1",
+  "os": "ubuntu",
+  "os_version": "26.04",
+  "architecture": "amd64",
+  "rootfs": {
+    "url": "https://github.com/yeetrun/yeet-vm-images/releases/download/guest-ubuntu-26.04-amd64-v1/rootfs.ext4.zst",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "uncompressed_bytes": 4294967296
+  },
+  "default_kernel_channel": "stable",
+  "provenance": {
+    "source_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "workflow_run_url": "https://github.com/yeetrun/yeet-vm-images/actions/runs/123456789"
+  }
+}

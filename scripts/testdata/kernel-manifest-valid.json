@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "kernel_id": "kernel-linux-7.1.1-yeet-v1",
+  "upstream_version": "7.1.1",
+  "packaging_revision": 1,
+  "architecture": "amd64",
+  "vmlinux": {
+    "url": "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.1-yeet-v1/vmlinux",
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "config": {
+    "url": "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.1-yeet-v1/kernel.config",
+    "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "guest_packages": {
+    "catalog_url": "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/kernel-packages/catalog.json",
+    "selector_schema_version": 2,
+    "release_id": "kernel-linux-7.1.1-yeet-v1"
+  },
+  "provenance": {
+    "source_commit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "workflow_run_url": "https://github.com/yeetrun/yeet-vm-images/actions/runs/123456790"
+  }
+}
