@@ -157,9 +157,12 @@ because the fast image intentionally does not support snaps.
 
 ### NixOS 26.05
 
-The NixOS image is built from a flake-pinned `nixpkgs` input using NixOS
-modules. It boots the same yeet-managed Firecracker kernel and uses the same
-`yeet-init` and `yeet-agent` guest integration as Ubuntu.
+The NixOS guest base is built from a flake-pinned `nixpkgs` input using NixOS
+modules. It uses the same `yeet-init` and `yeet-agent` guest integration as
+Ubuntu and ships a data-only selector for an exact catalog kernel. The guest
+release itself contains only the root filesystem, guest manifest, provenance,
+and checksums; host Firecracker, jailer, and boot-kernel assets are published
+and selected independently.
 
 The shipped `/etc/nixos` remains a normal NixOS configuration:
 `flake.nix`, `flake.lock`, `system.nix`, and `yeet/vm.nix` are present in the
@@ -175,16 +178,19 @@ Publishing is workflow-driven:
 - `publish-kernel-packages.yml` publishes the apt and Nix package sources.
 - `build-ubuntu-26.04.yml` manually publishes immutable Ubuntu guest bases and
   opens candidate-only catalog PRs.
-- `build-nixos-26.05.yml` publishes NixOS image bundles.
+- `build-nixos-26.05.yml` manually publishes immutable NixOS guest bases and
+  opens candidate-only catalog PRs.
 - `sync-latest-stable-kernel.yml` checks for newer stable kernels and opens
   reviewed kernel catalog promotions without rebuilding guest bases.
 
-The Ubuntu guest-base workflow checks out `yeetrun/yeet` at `yeet_ref`, builds
-the guest tools, verifies an exact stable kernel selector package, builds and
-re-downloads the rootfs-only release, then opens a candidate catalog PR.
-Component tags use `guest-ubuntu-26.04-amd64-v<N>`. Stable movement is a
-separate reviewed change after Catch provisioning validation; the workflow
-does not edit legacy image aliases.
+The Ubuntu and NixOS guest-base workflows check out `yeetrun/yeet` at
+`yeet_ref`, verify an exact stable kernel selector package, build and
+re-download a rootfs-only release, then open a candidate catalog PR. NixOS also
+requires a full `yeet_vm_images_ref` so the shipped flake lock names the exact
+kernel-package metadata commit. Component tags use
+`guest-<os>-<version>-amd64-v<N>`. Stable movement is a separate reviewed
+change after Catch provisioning validation; neither workflow edits legacy
+image aliases.
 
 ### Firecracker Runtime Candidates
 

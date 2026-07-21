@@ -174,6 +174,9 @@ in
     tmpfiles.rules = [
       "d /etc/yeet-vm 0755 root root -"
       "d /etc/yeet-vm/authorized_keys.d 0755 root root -"
+      # The guest owns only the data-only selector request. Catch owns
+      # validation, download, and host-side kernel staging.
+      "d /etc/yeet-vm/kernel 0755 root root -"
       "d /etc/yeet-vm/systemd-network 0755 root root -"
       "d /dev/net 0755 root root -"
       "c /dev/net/tun 0666 root root 10:200"
