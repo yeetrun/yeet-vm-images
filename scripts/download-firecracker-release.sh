@@ -82,7 +82,10 @@ archive_name="firecracker-$tag-x86_64.tgz"
 checksum_name="$archive_name.sha256.txt"
 browser_base="https://github.com/firecracker-microvm/firecracker/releases/download/$tag"
 validate_release='
-  .url == $api_url and .tag_name == $tag and .draft == false and .prerelease == false and
+  (.id | type == "number" and . > 0 and floor == .) and
+  .url == ("https://api.github.com/repos/firecracker-microvm/firecracker/releases/" + (.id | tostring)) and
+  .html_url == ("https://github.com/firecracker-microvm/firecracker/releases/tag/" + $tag) and
+  .tag_name == $tag and .draft == false and .prerelease == false and
   (.assets | type == "array") and
   ([.assets[] | select(.name == $archive_name)] | length) == 1 and
   ([.assets[] | select(.name == $checksum_name)] | length) == 1'

@@ -200,6 +200,8 @@ done
 set +e; old_interface="$("${base_env[@]}" "$downloader" --release-json x --archive y --checksum z --dest "$tmp_dir/old" 2>&1)"; old_rc=$?; set -e
 if [ "$old_rc" -ne 2 ] || ! grep -Fq 'usage:' <<<"$old_interface"; then fail "caller-controlled local ingest remains"; fi
 assert_download_failure malicious-api malicious-api-url 'official metadata'
+assert_download_failure malicious-release malicious-release-url 'official non-draft'
+assert_download_failure malicious-html malicious-html-url 'official non-draft'
 assert_download_failure wrong-api-archive wrong-api-archive-digest 'API digest'
 assert_download_failure wrong-api-checksum wrong-api-checksum-digest 'API digest'
 assert_download_failure wrong-api-archive-size wrong-api-archive-size 'API size'

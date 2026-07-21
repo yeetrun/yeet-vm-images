@@ -159,7 +159,9 @@ def main() -> None:
     api_archive = "1" * 64 if args.scenario == "wrong-api-archive-digest" else archive_digest
     api_checksum = "2" * 64 if args.scenario == "wrong-api-checksum-digest" else sha256(checksum)
     release = {
-        "url": f"{API_BASE}/releases/tags/{VERSION}",
+        "id": 1000,
+        "url": f"{API_BASE}/releases/1000",
+        "html_url": f"https://github.com/firecracker-microvm/firecracker/releases/tag/{VERSION}",
         "tag_name": VERSION,
         "draft": args.scenario == "draft",
         "prerelease": args.scenario == "prerelease",
@@ -174,6 +176,10 @@ def main() -> None:
         release["assets"][0]["size"] = len(archive) + 1
     if args.scenario == "malicious-api-url":
         release["assets"][0]["url"] = "https://example.invalid/asset"
+    if args.scenario == "malicious-release-url":
+        release["url"] = "https://example.invalid/release"
+    if args.scenario == "malicious-html-url":
+        release["html_url"] = "https://example.invalid/release"
     (args.output_dir / ARCHIVE_NAME).write_bytes(archive)
     (args.output_dir / CHECKSUM_NAME).write_bytes(checksum)
     (args.output_dir / f"firecracker-release-{VERSION}.json").write_text(json.dumps(release, indent=2, sort_keys=True) + "\n", encoding="utf-8")

@@ -18,7 +18,9 @@
     }
   ],
   "draft": false,
+  "html_url": "https://github.com/firecracker-microvm/firecracker/releases/tag/v1.16.1",
+  "id": 1000,
   "prerelease": false,
   "tag_name": "v1.16.1",
-  "url": "https://api.github.com/repos/firecracker-microvm/firecracker/releases/tags/v1.16.1"
+  "url": "https://api.github.com/repos/firecracker-microvm/firecracker/releases/1000"
 }
