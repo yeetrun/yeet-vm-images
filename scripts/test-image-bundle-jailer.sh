@@ -47,9 +47,9 @@ do
 done
 
 sync_workflow=.github/workflows/sync-latest-stable-kernel.yml
-sync_count="$(grep -Fc -- "firecracker_version: $expected_firecracker_version" "$repo_root/$sync_workflow")"
-if [ "$sync_count" -ne 2 ]; then
-	echo "$sync_workflow has $sync_count Firecracker $expected_firecracker_version inputs, want 2" >&2
+sync_count="$(grep -Fc -- "firecracker_version: $expected_firecracker_version" "$repo_root/$sync_workflow" || true)"
+if [ "$sync_count" -ne 0 ]; then
+	echo "$sync_workflow must not dispatch guest image builds or carry Firecracker image inputs" >&2
 	exit 1
 fi
 

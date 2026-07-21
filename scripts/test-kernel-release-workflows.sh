@@ -61,38 +61,37 @@ fi
 
 assert_contains "$sync_workflow" "kernel_release:"
 assert_contains "$sync_workflow" "kernel_release_build:"
+assert_contains "$sync_workflow" "promotion_needed:"
 assert_contains "$sync_workflow" 'YEET_KERNEL_VERSION="$KERNEL_VERSION" \'
-assert_contains "$sync_workflow" 'YEET_KERNEL_SOURCE_URL="${{ steps.kernel.outputs.kernel_source_url }}" \'
-assert_contains "$sync_workflow" 'YEET_KERNEL_SOURCE_SHA256="${{ steps.kernel.outputs.kernel_source_sha256 }}" \'
-assert_contains "$sync_workflow" 'YEET_KERNEL_CONFIG_URL="https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config" \'
-assert_contains "$sync_workflow" 'kernel_build_fingerprint="$(sha256sum scripts/build-linux-kernel.sh | awk '"'"'{ print $1 }'"'"')"'
-assert_contains "$sync_workflow" 'YEET_KERNEL_BUILD_FINGERPRINT="$kernel_build_fingerprint" \'
-assert_contains "$sync_workflow" 'scripts/download-kernel-release.sh "$kernel_current_release" "$RUNNER_TEMP/current-kernel-release"'
-assert_contains "$sync_workflow" 'comparison="$(scripts/compare-kernel-versions.sh "$KERNEL_VERSION" "$current_kernel")"'
-assert_contains "$sync_workflow" 'Kernel downgrade detected'
-assert_contains "$sync_workflow" 'reject_kernel_downgrade "Ubuntu 26.04 amd64" "$ubuntu_current_kernel"'
-assert_contains "$sync_workflow" 'reject_kernel_downgrade "NixOS 26.05 amd64" "$nixos_current_kernel"'
-assert_contains "$sync_workflow" 'if [ "$kernel_release_build" = "true" ]; then'
-assert_contains "$sync_workflow" 'ubuntu_build="true"'
-assert_contains "$sync_workflow" 'nixos_build="true"'
+assert_contains "$sync_workflow" 'scripts/download-kernel-release.sh "$current_release" "$current_dir"'
+assert_contains "$sync_workflow" 'manifest_sha256="$(sha256sum "$current_dir/kernel-manifest.json" | awk '"'"'{ print $1 }'"'"')"'
+assert_contains "$sync_workflow" '.channels.amd64.stable == {kernel_id: $release, manifest_sha256: $manifest}'
 assert_not_contains "$sync_workflow" "package_image_release"
 assert_not_contains "$sync_workflow" "Kernel package source image release"
 
 assert_job_contains "$sync_workflow" "build-kernel" "uses: ./.github/workflows/build-kernel.yml"
 assert_job_contains "$sync_workflow" "build-kernel" 'kernel_release: ${{ needs.detect.outputs.kernel_release }}'
-assert_job_contains "$sync_workflow" "build-ubuntu" "- build-kernel"
-assert_job_contains "$sync_workflow" "build-ubuntu" "needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped'"
-assert_job_contains "$sync_workflow" "build-ubuntu" 'kernel_release: ${{ needs.detect.outputs.kernel_release }}'
-assert_job_contains "$sync_workflow" "build-nixos" "- build-kernel"
-assert_job_contains "$sync_workflow" "build-nixos" "- publish-kernel-packages"
-assert_job_contains "$sync_workflow" "build-nixos" "needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped'"
-assert_job_contains "$sync_workflow" "build-nixos" 'yeet_vm_images_ref: ${{ needs.publish-kernel-packages.outputs.metadata_commit }}'
-assert_job_contains "$sync_workflow" "build-nixos" 'kernel_release: ${{ needs.detect.outputs.kernel_release }}'
+assert_not_contains "$sync_workflow" "  build-ubuntu:"
+assert_not_contains "$sync_workflow" "  build-nixos:"
+assert_not_contains "$sync_workflow" "uses: ./.github/workflows/build-ubuntu-26.04.yml"
+assert_not_contains "$sync_workflow" "uses: ./.github/workflows/build-nixos-26.05.yml"
 assert_job_contains "$sync_workflow" "publish-kernel-packages" "- detect"
 assert_job_contains "$sync_workflow" "publish-kernel-packages" "- build-kernel"
 assert_job_not_contains "$sync_workflow" "publish-kernel-packages" "- build-ubuntu"
 assert_job_contains "$sync_workflow" "publish-kernel-packages" "needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped'"
 assert_job_contains "$sync_workflow" "publish-kernel-packages" 'kernel_release: ${{ needs.detect.outputs.kernel_release }}'
+assert_contains "$sync_workflow" "scripts/update-kernel-catalog.sh"
+assert_contains "$sync_workflow" "peter-evans/create-pull-request@"
+assert_job_contains "$sync_workflow" "promote-kernel-catalog" "needs.publish-kernel-packages.result == 'success'"
+assert_job_contains "$sync_workflow" "promote-kernel-catalog" "--channel stable"
+assert_job_contains "$sync_workflow" "promote-kernel-catalog" "add-paths: kernel-catalog.json"
 
 assert_contains "$publish_workflow" "kernel_release:"
 assert_not_contains "$publish_workflow" "image_release:"
+assert_contains "$publish_workflow" 'YEET_VM_KERNEL_RELEASE_ID="$KERNEL_RELEASE" \'
+assert_contains "$publish_workflow" 'YEET_VM_KERNEL_MANIFEST_SHA256="$manifest_sha256" \'
+assert_contains "$publish_workflow" 'releaseId = "$KERNEL_RELEASE";'
+assert_contains "$publish_workflow" 'manifestSha256 = "$manifest_sha256";'
+assert_contains "$publish_workflow" "Re-download and verify published selector metadata"
+assert_contains "$publish_workflow" '"$page_url/kernel-packages/catalog.json"'
+assert_contains "$publish_workflow" '"$page_url/apt/pool/main/$deb_name"'

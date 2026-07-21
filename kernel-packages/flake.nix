@@ -22,7 +22,7 @@
       });
       kernelPackage = pkgs.callPackage ./yeet-kernel-package.nix {
         inherit vmlinux kernelConfig;
-        inherit (metadata) kernelVersion vmlinuxSha256Raw kernelConfigSha256Raw;
+        inherit (metadata) kernelVersion vmlinuxSha256Raw kernelConfigSha256Raw releaseId manifestSha256;
       };
     in
     {

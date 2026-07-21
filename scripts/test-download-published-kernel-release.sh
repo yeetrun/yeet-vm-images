@@ -20,18 +20,35 @@ vmlinux_sha="$(sha256sum "$base_assets/vmlinux" | awk '{print $1}')"
 config_sha="$(sha256sum "$base_assets/kernel.config" | awk '{print $1}')"
 jq -n \
 	--arg release "$release" \
-	--arg source_sha "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" \
-	--arg build_sha "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789" \
 	--arg commit "76543210fedcba9876543210fedcba9876543210" \
 	--arg vmlinux "$vmlinux_sha" --arg config "$config_sha" '
-  {schema_version:1,release:$release,upstream_kernel_version:"7.1.4",kernel_version:"linux-7.1.4-yeet",
-   kernel_source_url:"https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.4.tar.xz",
-   kernel_source_sha256:$source_sha,
-   kernel_config_url:"https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config",
-   kernel_build_fingerprint:$build_sha,localversion:"-yeet",repository:"yeetrun/yeet-vm-images",commit:$commit,
-   checksums:{vmlinux:$vmlinux,"kernel.config":$config}}
+  {
+    schema_version: 1,
+    kernel_id: $release,
+    upstream_version: "7.1.4",
+    packaging_revision: 1,
+    architecture: "amd64",
+    vmlinux: {
+      url: ("https://github.com/yeetrun/yeet-vm-images/releases/download/" + $release + "/vmlinux"),
+      sha256: $vmlinux
+    },
+    config: {
+      url: ("https://github.com/yeetrun/yeet-vm-images/releases/download/" + $release + "/kernel.config"),
+      sha256: $config
+    },
+    guest_packages: {
+      catalog_url: "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/kernel-packages/catalog.json",
+      selector_schema_version: 2,
+      release_id: $release
+    },
+    provenance: {
+      source_commit: $commit,
+      workflow_run_url: "https://github.com/yeetrun/yeet-vm-images/actions/runs/123456790"
+    }
+  }
 ' >"$base_assets/kernel-manifest.json"
-printf '%s  vmlinux\n%s  kernel.config\n' "$vmlinux_sha" "$config_sha" >"$base_assets/kernel-checksums.txt"
+manifest_sha="$(sha256sum "$base_assets/kernel-manifest.json" | awk '{print $1}')"
+printf '%s  vmlinux\n%s  kernel.config\n%s  kernel-manifest.json\n' "$vmlinux_sha" "$config_sha" "$manifest_sha" >"$base_assets/kernel-checksums.txt"
 
 cat >"$bin_dir/gh" <<'MOCK_GH'
 #!/usr/bin/env bash
@@ -135,12 +152,12 @@ prepare_assets() {
 	assets="$tmp_dir/assets-$scenario"
 	cp -R "$base_assets" "$assets"
 	case "$scenario" in
-		manifest-release) jq '.release="kernel-linux-7.1.4-yeet-v2"' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
-		manifest-repository) jq '.repository="other/repository"' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
-		manifest-upstream) jq '.upstream_kernel_version="7.1.5"' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
-		manifest-fields) jq '.kernel_build_fingerprint="short"' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
-		manifest-missing-checksum) jq 'del(.checksums["kernel.config"])' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
-		manifest-wrong-checksum) jq '.checksums.vmlinux=("0"*64)' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
+		manifest-release) jq '.kernel_id="kernel-linux-7.1.4-yeet-v2"' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
+		manifest-repository) jq '.vmlinux.url="https://example.invalid/vmlinux"' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
+		manifest-upstream) jq '.upstream_version="7.1.5"' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
+		manifest-fields) jq '.provenance.source_commit="short"' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
+		manifest-missing-checksum) jq 'del(.config.sha256)' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
+		manifest-wrong-checksum) jq '.vmlinux.sha256=("0"*64)' "$assets/kernel-manifest.json" >"$assets/m"; mv "$assets/m" "$assets/kernel-manifest.json" ;;
 		checksum-file-mismatch) printf '%s  vmlinux\n%s  kernel.config\n' "$(printf '0%.0s' {1..64})" "$config_sha" >"$assets/kernel-checksums.txt" ;;
 		checksum-file-extra) printf '%s  extra\n' "$(printf '0%.0s' {1..64})" >>"$assets/kernel-checksums.txt" ;;
 	esac
@@ -154,10 +171,6 @@ run_download() {
 	YEET_KERNEL_DOWNLOAD_SCENARIO="$scenario" YEET_KERNEL_DOWNLOAD_ASSETS="$assets" YEET_KERNEL_RELEASE="$release" \
 		GITHUB_REPOSITORY=yeetrun/yeet-vm-images \
 		YEET_KERNEL_VERSION=7.1.4 \
-		YEET_KERNEL_SOURCE_URL=https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.4.tar.xz \
-		YEET_KERNEL_SOURCE_SHA256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-		YEET_KERNEL_CONFIG_URL=https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config \
-		YEET_KERNEL_BUILD_FINGERPRINT=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789 \
 		PATH="$bin_dir:$PATH" "$downloader" "$release" "$out"
 }
 

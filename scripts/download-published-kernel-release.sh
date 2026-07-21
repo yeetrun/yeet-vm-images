@@ -14,8 +14,6 @@ if [[ ! "$kernel_release" =~ ^kernel-linux-([0-9]+[.][0-9]+([.][0-9]+)*)-yeet-v(
 	fail "release ID is not an exact immutable kernel release: $kernel_release"
 fi
 upstream_version="${BASH_REMATCH[1]}"
-major_version="${upstream_version%%.*}"
-expected_source_url="https://cdn.kernel.org/pub/linux/kernel/v${major_version}.x/linux-${upstream_version}.tar.xz"
 [ ! -e "$out_dir" ] || fail "output path already exists"
 for cmd in curl gh jq mkdir python3 sha256sum wc; do require "$cmd"; done
 
@@ -87,42 +85,46 @@ download_asset vmlinux
 download_asset kernel.config
 
 manifest="$assets_dir/kernel-manifest.json"
-jq -e --arg release "$kernel_release" --arg upstream "$upstream_version" --arg source "$expected_source_url" '
-  keys == ["checksums","commit","kernel_build_fingerprint","kernel_config_url","kernel_source_sha256","kernel_source_url","kernel_version","localversion","release","repository","schema_version","upstream_kernel_version"] and
-  .schema_version == 1 and .release == $release and
-  .upstream_kernel_version == $upstream and .kernel_version == ("linux-" + $upstream + "-yeet") and
-  .kernel_source_url == $source and (.kernel_source_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
-  (.kernel_config_url | type == "string" and test("^https://raw[.]githubusercontent[.]com/firecracker-microvm/firecracker/[0-9a-f]{40}/resources/guest_configs/microvm-kernel-ci-x86_64-6[.]1[.]config$")) and
-  (.kernel_build_fingerprint | type == "string" and test("^[0-9a-f]{64}$")) and
-  .localversion == "-yeet" and .repository == "yeetrun/yeet-vm-images" and
-  (.commit | type == "string" and test("^[0-9a-f]{40}$")) and
-  (.checksums | keys == ["kernel.config","vmlinux"]) and
-  all(.checksums[]; type == "string" and test("^[0-9a-f]{64}$"))
+jq -e --arg release "$kernel_release" --arg upstream "$upstream_version" '
+  def sha256: type == "string" and test("^[0-9a-f]{64}$");
+  keys == ["architecture","config","guest_packages","kernel_id","packaging_revision","provenance","schema_version","upstream_version","vmlinux"] and
+  .schema_version == 1 and .kernel_id == $release and
+  .upstream_version == $upstream and
+  .kernel_id == "kernel-linux-\(.upstream_version)-yeet-v\(.packaging_revision)" and
+  .architecture == "amd64" and
+  .vmlinux.url == ("https://github.com/yeetrun/yeet-vm-images/releases/download/" + $release + "/vmlinux") and
+  (.vmlinux.sha256 | sha256) and
+  .config.url == ("https://github.com/yeetrun/yeet-vm-images/releases/download/" + $release + "/kernel.config") and
+  (.config.sha256 | sha256) and
+  .guest_packages == {
+    catalog_url: "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/kernel-packages/catalog.json",
+    selector_schema_version: 2,
+    release_id: $release
+  } and
+  (.provenance.source_commit | type == "string" and test("^[0-9a-f]{40}$")) and
+  (.provenance.workflow_run_url | type == "string" and test("^https://github[.]com/yeetrun/yeet-vm-images/actions/runs/[1-9][0-9]*$"))
 ' "$manifest" >/dev/null || fail "kernel manifest identity or lifecycle contract mismatch"
 
-for binding in \
-	"YEET_KERNEL_VERSION:upstream_kernel_version" \
-	"YEET_KERNEL_SOURCE_URL:kernel_source_url" \
-	"YEET_KERNEL_SOURCE_SHA256:kernel_source_sha256" \
-	"YEET_KERNEL_CONFIG_URL:kernel_config_url" \
-	"YEET_KERNEL_BUILD_FINGERPRINT:kernel_build_fingerprint"; do
-	env_name="${binding%%:*}"
-	field="${binding#*:}"
-	expected="${!env_name:-}"
-	if [ -n "$expected" ]; then
-		actual="$(jq -er --arg field "$field" '.[$field]' "$manifest")"
-		[ "$actual" = "$expected" ] || fail "kernel manifest $field mismatch: manifest=$actual expected=$expected"
-	fi
-done
+expected_version="${YEET_KERNEL_VERSION:-}"
+[ -z "$expected_version" ] || [ "$(jq -er '.upstream_version' "$manifest")" = "$expected_version" ] ||
+	fail "kernel manifest upstream version mismatch"
+manifest_sha256="$(sha256sum "$manifest" | awk '{print $1}')"
+expected_manifest_sha256="${YEET_KERNEL_MANIFEST_SHA256:-}"
+[ -z "$expected_manifest_sha256" ] || [ "$manifest_sha256" = "$expected_manifest_sha256" ] ||
+	fail "kernel manifest SHA-256 mismatch"
 
 for asset in vmlinux kernel.config; do
-	want="$(jq -er --arg asset "$asset" '.checksums[$asset]' "$manifest")"
+	case "$asset" in
+		vmlinux) want="$(jq -er '.vmlinux.sha256' "$manifest")" ;;
+		kernel.config) want="$(jq -er '.config.sha256' "$manifest")" ;;
+	esac
 	got="$(sha256sum "$assets_dir/$asset" | awk '{print $1}')"
 	[ "$got" = "$want" ] || fail "kernel manifest checksum mismatch: $asset"
 done
-expected_checksums="$(printf '%s  vmlinux\n%s  kernel.config' \
-	"$(jq -er '.checksums.vmlinux' "$manifest")" \
-	"$(jq -er '.checksums["kernel.config"]' "$manifest")")"
+expected_checksums="$(printf '%s  vmlinux\n%s  kernel.config\n%s  kernel-manifest.json' \
+	"$(jq -er '.vmlinux.sha256' "$manifest")" \
+	"$(jq -er '.config.sha256' "$manifest")" \
+	"$manifest_sha256")"
 [ "$(cat "$assets_dir/kernel-checksums.txt")" = "$expected_checksums" ] || fail "kernel checksum file does not exactly bind the manifest payloads"
 (cd "$assets_dir" && sha256sum --check --strict kernel-checksums.txt >/dev/null) || fail "kernel checksum verification failed"
 

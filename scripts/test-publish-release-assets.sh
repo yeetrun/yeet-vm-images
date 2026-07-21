@@ -111,12 +111,13 @@ assert_workflow_order() {
 	fi
 }
 
-assert_workflow_order "Preflight release target" "Build kernel"
-assert_workflow_contains "sha256sum vmlinux kernel.config > kernel-checksums.txt"
-assert_workflow_contains 'kernel_build_fingerprint="$(sha256sum scripts/build-linux-kernel.sh | awk '"'"'{ print $1 }'"'"')"'
-assert_workflow_contains '--arg kernel_build_fingerprint "$kernel_build_fingerprint"'
-assert_workflow_contains 'kernel_build_fingerprint: $kernel_build_fingerprint'
-assert_workflow_contains ".kernel_build_fingerprint == env.KERNEL_BUILD_FINGERPRINT"
+assert_workflow_order "Build kernel" "Check immutable release target"
+assert_workflow_order "Check immutable release target" "Publish release"
+assert_workflow_contains "scripts/render-kernel-manifest.sh"
+assert_workflow_contains "sha256sum vmlinux kernel.config kernel-manifest.json > kernel-checksums.txt"
+assert_workflow_contains "kernel releases are immutable; overwrite_release is no longer supported"
+assert_workflow_contains 'gh release download "$KERNEL_RELEASE" --pattern kernel-manifest.json'
+assert_workflow_contains 'if [ "$published" != "$expected" ]; then'
 assert_workflow_contains "check_manifest_checksum vmlinux"
 assert_workflow_contains "check_manifest_checksum kernel.config"
 assert_workflow_not_contains 'sha256sum "$KERNEL_OUT_DIR/vmlinux" "$KERNEL_OUT_DIR/kernel.config" >"$KERNEL_OUT_DIR/kernel-checksums.txt"'

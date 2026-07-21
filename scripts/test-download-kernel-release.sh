@@ -20,35 +20,34 @@ kernel_config_sha="$(sha256sum "$remote_dir/kernel.config" | awk '{ print $1 }')
 write_manifest() {
 	local vmlinux_checksum="${1:-$vmlinux_sha}"
 	local kernel_config_checksum="${2:-$kernel_config_sha}"
-	local checksums_filter="${3:-.}"
-	local kernel_build_fingerprint="${4:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
+	local manifest_filter="${3:-.}"
 	jq -n \
-		--arg release "kernel-linux-7.1.1-yeet-v2" \
-		--arg upstream_kernel_version "7.1.1" \
-		--arg kernel_version "linux-7.1.1-yeet" \
-		--arg kernel_source_url "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.1.tar.xz" \
-		--arg kernel_source_sha256 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" \
-		--arg kernel_config_url "https://example.invalid/kernel.config" \
-		--arg kernel_build_fingerprint "$kernel_build_fingerprint" \
 		--arg vmlinux_sha "$vmlinux_checksum" \
 		--arg kernel_config_sha "$kernel_config_checksum" \
 		'{
 		  schema_version: 1,
-		  release: $release,
-		  upstream_kernel_version: $upstream_kernel_version,
-		  kernel_version: $kernel_version,
-		  kernel_source_url: $kernel_source_url,
-		  kernel_source_sha256: $kernel_source_sha256,
-		  kernel_config_url: $kernel_config_url,
-		  kernel_build_fingerprint: $kernel_build_fingerprint,
-		  localversion: "-yeet",
-		  repository: "yeetrun/yeet-vm-images",
-		  commit: "abc123",
-		  checksums: {
-		    vmlinux: $vmlinux_sha,
-		    "kernel.config": $kernel_config_sha
+		  kernel_id: "kernel-linux-7.1.1-yeet-v2",
+		  upstream_version: "7.1.1",
+		  packaging_revision: 2,
+		  architecture: "amd64",
+		  vmlinux: {
+		    url: "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.1-yeet-v2/vmlinux",
+		    sha256: $vmlinux_sha
+		  },
+		  config: {
+		    url: "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.1-yeet-v2/kernel.config",
+		    sha256: $kernel_config_sha
+		  },
+		  guest_packages: {
+		    catalog_url: "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/kernel-packages/catalog.json",
+		    selector_schema_version: 2,
+		    release_id: "kernel-linux-7.1.1-yeet-v2"
+		  },
+		  provenance: {
+		    source_commit: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		    workflow_run_url: "https://github.com/yeetrun/yeet-vm-images/actions/runs/123456790"
 		  }
-		}' | jq "$checksums_filter" >"$remote_dir/kernel-manifest.json"
+		}' | jq "$manifest_filter" >"$remote_dir/kernel-manifest.json"
 }
 
 run_download() {
@@ -58,10 +57,6 @@ run_download() {
 		GITHUB_REPOSITORY=yeetrun/yeet-vm-images \
 		YEET_TEST_REMOTE_DIR="$remote_dir" \
 		YEET_KERNEL_VERSION=7.1.1 \
-		YEET_KERNEL_SOURCE_URL=https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.1.tar.xz \
-		YEET_KERNEL_SOURCE_SHA256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-		YEET_KERNEL_CONFIG_URL=https://example.invalid/kernel.config \
-		YEET_KERNEL_BUILD_FINGERPRINT=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
 		"$repo_root/scripts/download-kernel-release.sh" kernel-linux-7.1.1-yeet-v2 "$output_dir" "$@"
 }
 
@@ -146,14 +141,14 @@ if run_download "$tmp_dir/bad-vmlinux" >/dev/null 2>&1; then
 	exit 1
 fi
 
-write_manifest "$vmlinux_sha" "$kernel_config_sha" 'del(.checksums["kernel.config"])'
+write_manifest "$vmlinux_sha" "$kernel_config_sha" 'del(.config.sha256)'
 if run_download "$tmp_dir/missing-kernel-config-checksum" >/dev/null 2>&1; then
 	echo "download helper accepted missing kernel.config checksum" >&2
 	exit 1
 fi
 
-write_manifest "$vmlinux_sha" "$kernel_config_sha" '.' "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-if run_download "$tmp_dir/bad-fingerprint" >/dev/null 2>&1; then
-	echo "download helper accepted mismatched kernel build fingerprint" >&2
+write_manifest "$vmlinux_sha" "$kernel_config_sha" '.provenance.source_commit = "short"'
+if run_download "$tmp_dir/bad-provenance" >/dev/null 2>&1; then
+	echo "download helper accepted malformed provenance" >&2
 	exit 1
 fi

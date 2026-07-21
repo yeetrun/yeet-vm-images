@@ -43,18 +43,29 @@ chmod +x "$fake_bin/dpkg-deb"
 PATH="$fake_bin:$PATH" \
 	YEET_TEST_CAPTURE_ROOT="$capture_root" \
 	YEET_VM_KERNEL_VERSION=linux-7.1.1-yeet \
+	YEET_VM_KERNEL_RELEASE_ID=kernel-linux-7.1.1-yeet-v1 \
+	YEET_VM_KERNEL_MANIFEST_SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
 	"$repo_root/scripts/build-kernel-deb.sh" "$kernel_dir" "$deb_dir"
 
-test -s "$deb_dir/yeet-vm-kernel_7.1.1_amd64.deb"
-test -s "$deb_dir/yeet-vm-kernel_7.1.1_amd64.deb.sha256"
+test -s "$deb_dir/yeet-vm-kernel_7.1.1-1_amd64.deb"
+test -s "$deb_dir/yeet-vm-kernel_7.1.1-1_amd64.deb.sha256"
 grep -q '^Package: yeet-vm-kernel$' "$capture_root/DEBIAN/control"
-grep -q '^Version: 7.1.1$' "$capture_root/DEBIAN/control"
+grep -q '^Version: 7.1.1-1$' "$capture_root/DEBIAN/control"
+grep -q '^Depends: jq$' "$capture_root/DEBIAN/control"
 test -x "$capture_root/DEBIAN/postinst"
 test -x "$capture_root/usr/lib/yeet-vm-kernel/select-kernel"
 test -x "$capture_root/usr/lib/yeet-vm-kernel/sync-message"
 grep -q '/usr/lib/yeet-vm-kernel/sync-message "linux-7.1.1-yeet"' "$capture_root/DEBIAN/postinst"
 cmp "$kernel_dir/vmlinux" "$capture_root/usr/lib/yeet-vm/kernels/linux-7.1.1-yeet/vmlinux"
 cmp "$kernel_dir/kernel.config" "$capture_root/usr/lib/yeet-vm/kernels/linux-7.1.1-yeet/kernel.config"
+jq -e '
+	.schema_version == 2 and
+	.release_id == "kernel-linux-7.1.1-yeet-v1" and
+	.manifest_sha256 == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+' "$capture_root/usr/lib/yeet-vm/kernels/linux-7.1.1-yeet/release.json" >/dev/null
+grep -Fq '"schema_version": 2' "$capture_root/usr/lib/yeet-vm-kernel/select-kernel"
+grep -Fq '"release_id": "$release_id"' "$capture_root/usr/lib/yeet-vm-kernel/select-kernel"
+grep -Fq '"manifest_sha256": "$manifest_sha256"' "$capture_root/usr/lib/yeet-vm-kernel/select-kernel"
 message="$(YEET_VM_SERVICE_NAME=tyler-exit-node "$capture_root/usr/lib/yeet-vm-kernel/sync-message" linux-7.1.1-yeet 2>&1)"
 printf '%s\n' "$message" | grep -q 'Reboot this VM to boot the selected kernel.'
 if printf '%s\n' "$message" | grep -q 'yeet vm kernel sync'; then
@@ -125,7 +136,7 @@ PATH="$fake_bin:$PATH" \
 	YEET_APT_GPG_PRIVATE_KEY='fake private key' \
 	YEET_APT_GPG_KEY_ID='fake@example.invalid' \
 	"$repo_root/scripts/publish-apt-repo.sh" "$deb_dir" "$repo_dir"
-test -s "$repo_dir/pool/main/yeet-vm-kernel_7.1.1_amd64.deb"
+test -s "$repo_dir/pool/main/yeet-vm-kernel_7.1.1-1_amd64.deb"
 test -s "$repo_dir/dists/stable/main/binary-amd64/Packages"
 test -s "$repo_dir/dists/stable/main/binary-amd64/Packages.gz"
 test -s "$repo_dir/dists/stable/Release"
@@ -147,6 +158,16 @@ grep -q 'metadata.kernelConfigPath or' "$repo_root/kernel-packages/flake.nix"
 grep -q 'environment.etc."yeet-vm/kernel/selected.json".source' "$repo_root/kernel-packages/flake.nix"
 grep -q 'share/yeet-vm/kernel/selected.json' "$repo_root/kernel-packages/flake.nix"
 grep -q 'share/yeet-vm/kernel/selected.json' "$repo_root/kernel-packages/yeet-kernel-package.nix"
+grep -q '"schema_version": 2' "$repo_root/kernel-packages/yeet-kernel-package.nix"
+grep -q '"release_id": "${releaseId}"' "$repo_root/kernel-packages/yeet-kernel-package.nix"
+grep -q '"manifest_sha256": "${manifestSha256}"' "$repo_root/kernel-packages/yeet-kernel-package.nix"
+jq -e '
+	.schema_version == 1 and
+	.release_id == "kernel-linux-7.1.4-yeet-v1" and
+	(.manifest_sha256 | test("^[0-9a-f]{64}$")) and
+	.selector_schema_version == 2 and
+	.debian.package == "yeet-vm-kernel"
+' "$repo_root/kernel-packages/catalog.json" >/dev/null
 
 grep -q 'kernel_release:' "$repo_root/.github/workflows/publish-kernel-packages.yml"
 if grep -q 'image_release:' "$repo_root/.github/workflows/publish-kernel-packages.yml"; then
@@ -157,6 +178,7 @@ grep -q 'KERNEL_RELEASE:' "$repo_root/.github/workflows/publish-kernel-packages.
 grep -q 'releases/download/${KERNEL_RELEASE}' "$repo_root/.github/workflows/publish-kernel-packages.yml"
 grep -q 'YEET_KERNEL_VERSION="$KERNEL_VERSION"' "$repo_root/.github/workflows/publish-kernel-packages.yml"
 grep -q 'scripts/download-kernel-release.sh "$KERNEL_RELEASE" "$kernel_dir"' "$repo_root/.github/workflows/publish-kernel-packages.yml"
+grep -q 'cp kernel-packages/catalog.json "$site/kernel-packages/catalog.json"' "$repo_root/.github/workflows/publish-kernel-packages.yml"
 grep -q 'asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${KERNEL_RELEASE}"' "$repo_root/.github/workflows/publish-kernel-packages.yml"
 if grep -q 'IMAGE_RELEASE' "$repo_root/.github/workflows/publish-kernel-packages.yml"; then
 	echo "publish-kernel-packages.yml must not use IMAGE_RELEASE" >&2

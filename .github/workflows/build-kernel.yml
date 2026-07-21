@@ -77,26 +77,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Preflight release target
-        run: |
-          set -euo pipefail
-          overwrite="${{ inputs.overwrite_release }}"
-          if [ "$overwrite" = "true" ]; then
-            exit 0
-          fi
-          release_exists=0
-          tag_exists=0
-          if gh release view "$KERNEL_RELEASE" >/dev/null 2>&1; then
-            release_exists=1
-          fi
-          if git ls-remote --exit-code --tags origin "refs/tags/$KERNEL_RELEASE" >/dev/null 2>&1; then
-            tag_exists=1
-          fi
-          if [ "$release_exists" -eq 1 ] || [ "$tag_exists" -eq 1 ]; then
-            echo "Release or tag $KERNEL_RELEASE already exists. Re-run with overwrite_release=true to replace it." >&2
-            exit 1
-          fi
-
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -121,44 +101,22 @@ jobs:
       - name: Write kernel manifest
         run: |
           set -euo pipefail
-          kernel_build_fingerprint="$(sha256sum scripts/build-linux-kernel.sh | awk '{ print $1 }')"
-          echo "KERNEL_BUILD_FINGERPRINT=$kernel_build_fingerprint" >>"$GITHUB_ENV"
-          vmlinux_sha="$(sha256sum "$KERNEL_OUT_DIR/vmlinux" | awk '{ print $1 }')"
-          kernel_config_sha="$(sha256sum "$KERNEL_OUT_DIR/kernel.config" | awk '{ print $1 }')"
+          packaging_revision="${KERNEL_RELEASE##*-v}"
+          workflow_run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          scripts/render-kernel-manifest.sh \
+            --kernel-id "$KERNEL_RELEASE" \
+            --upstream-version "$KERNEL_VERSION" \
+            --packaging-revision "$packaging_revision" \
+            --architecture amd64 \
+            --vmlinux "$KERNEL_OUT_DIR/vmlinux" \
+            --config "$KERNEL_OUT_DIR/kernel.config" \
+            --source-commit "$GITHUB_SHA" \
+            --workflow-run-url "$workflow_run_url" \
+            --out "$KERNEL_OUT_DIR/kernel-manifest.json"
           (
             cd "$KERNEL_OUT_DIR"
-            sha256sum vmlinux kernel.config > kernel-checksums.txt
+            sha256sum vmlinux kernel.config kernel-manifest.json > kernel-checksums.txt
           )
-          jq -n \
-            --arg release "$KERNEL_RELEASE" \
-            --arg upstream_kernel_version "$KERNEL_VERSION" \
-            --arg kernel_version "linux-${KERNEL_VERSION}-yeet" \
-            --arg kernel_source_url "$KERNEL_SOURCE_URL" \
-            --arg kernel_source_sha256 "$KERNEL_SOURCE_SHA256" \
-            --arg kernel_config_url "$KERNEL_CONFIG_URL" \
-            --arg kernel_build_fingerprint "$kernel_build_fingerprint" \
-            --arg localversion "-yeet" \
-            --arg repository "$GITHUB_REPOSITORY" \
-            --arg commit "$GITHUB_SHA" \
-            --arg vmlinux_sha "$vmlinux_sha" \
-            --arg kernel_config_sha "$kernel_config_sha" \
-            '{
-              schema_version: 1,
-              release: $release,
-              upstream_kernel_version: $upstream_kernel_version,
-              kernel_version: $kernel_version,
-              kernel_source_url: $kernel_source_url,
-              kernel_source_sha256: $kernel_source_sha256,
-              kernel_config_url: $kernel_config_url,
-              kernel_build_fingerprint: $kernel_build_fingerprint,
-              localversion: $localversion,
-              repository: $repository,
-              commit: $commit,
-              checksums: {
-                vmlinux: $vmlinux_sha,
-                "kernel.config": $kernel_config_sha
-              }
-            }' >"$KERNEL_OUT_DIR/kernel-manifest.json"
 
       - name: Verify kernel assets
         run: |
@@ -171,7 +129,11 @@ jobs:
             local asset="$1"
             local want
             local got
-            want="$(jq -r --arg asset "$asset" '.checksums[$asset] // empty' "$KERNEL_OUT_DIR/kernel-manifest.json")"
+            case "$asset" in
+              vmlinux) want="$(jq -r '.vmlinux.sha256' "$KERNEL_OUT_DIR/kernel-manifest.json")" ;;
+              kernel.config) want="$(jq -r '.config.sha256' "$KERNEL_OUT_DIR/kernel-manifest.json")" ;;
+              *) echo "unsupported manifest asset: $asset" >&2; exit 1 ;;
+            esac
             if [ -z "$want" ]; then
               echo "manifest missing checksum for $asset" >&2
               exit 1
@@ -186,22 +148,24 @@ jobs:
           check_manifest_checksum kernel.config
           jq -e '
             .schema_version == 1 and
-            .release == env.KERNEL_RELEASE and
-            .upstream_kernel_version == env.KERNEL_VERSION and
-            .kernel_version == ("linux-" + env.KERNEL_VERSION + "-yeet") and
-            .kernel_source_url == env.KERNEL_SOURCE_URL and
-            .kernel_source_sha256 == env.KERNEL_SOURCE_SHA256 and
-            .kernel_config_url == env.KERNEL_CONFIG_URL and
-            .kernel_build_fingerprint == env.KERNEL_BUILD_FINGERPRINT and
-            .localversion == "-yeet" and
-            (.checksums.vmlinux | test("^[0-9a-f]{64}$")) and
-            (.checksums["kernel.config"] | test("^[0-9a-f]{64}$"))
+            .kernel_id == env.KERNEL_RELEASE and
+            .upstream_version == env.KERNEL_VERSION and
+            .kernel_id == "kernel-linux-\(.upstream_version)-yeet-v\(.packaging_revision)" and
+            .architecture == "amd64" and
+            .guest_packages.selector_schema_version == 2 and
+            .guest_packages.release_id == env.KERNEL_RELEASE and
+            (.vmlinux.sha256 | test("^[0-9a-f]{64}$")) and
+            (.config.sha256 | test("^[0-9a-f]{64}$"))
           ' "$KERNEL_OUT_DIR/kernel-manifest.json"
 
-      - name: Check release target
+      - name: Check immutable release target
+        id: release_target
         run: |
           set -euo pipefail
-          overwrite="${{ inputs.overwrite_release }}"
+          if [ "${{ inputs.overwrite_release }}" = "true" ]; then
+            echo "kernel releases are immutable; overwrite_release is no longer supported" >&2
+            exit 1
+          fi
           release_exists=0
           tag_exists=0
           if gh release view "$KERNEL_RELEASE" >/dev/null 2>&1; then
@@ -211,17 +175,23 @@ jobs:
             tag_exists=1
           fi
           if [ "$release_exists" -eq 0 ] && [ "$tag_exists" -eq 0 ]; then
+            echo "published=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$overwrite" != "true" ]; then
-            echo "Release or tag $KERNEL_RELEASE already exists. Re-run with overwrite_release=true to replace it." >&2
+          if [ "$release_exists" -ne 1 ] || [ "$tag_exists" -ne 1 ]; then
+            echo "kernel release/tag state is incomplete for $KERNEL_RELEASE" >&2
             exit 1
           fi
-          if [ "$release_exists" -eq 1 ]; then
-            gh release delete "$KERNEL_RELEASE" --cleanup-tag --yes
-          elif [ "$tag_exists" -eq 1 ]; then
-            git push origin ":refs/tags/$KERNEL_RELEASE"
+          published_dir="$RUNNER_TEMP/published-kernel-release"
+          mkdir -p "$published_dir"
+          gh release download "$KERNEL_RELEASE" --pattern kernel-manifest.json --dir "$published_dir"
+          expected="$(sha256sum "$KERNEL_OUT_DIR/kernel-manifest.json" | awk '{ print $1 }')"
+          published="$(sha256sum "$published_dir/kernel-manifest.json" | awk '{ print $1 }')"
+          if [ "$published" != "$expected" ]; then
+            echo "immutable kernel release $KERNEL_RELEASE has manifest $published, built manifest is $expected" >&2
+            exit 1
           fi
+          echo "published=true" >>"$GITHUB_OUTPUT"
 
       - name: Prepare release notes
         run: |
@@ -237,6 +207,7 @@ jobs:
           EOF
 
       - name: Publish release
+        if: ${{ steps.release_target.outputs.published != 'true' }}
         run: |
           scripts/publish-kernel-release-assets.sh \
             "$KERNEL_RELEASE" \

@@ -1,5 +1,7 @@
 {
   kernelVersion = "7.1.4";
+  releaseId = "kernel-linux-7.1.4-yeet-v1";
+  manifestSha256 = "ea36a5a769f1faa6be56d5894514166ed115fe5ddc43a13c6ef245aa66b2248d";
   vmlinuxUrl = "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.4-yeet-v1/vmlinux";
   kernelConfigUrl = "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.4-yeet-v1/kernel.config";
   vmlinuxHash = "sha256-zJ6tuYyPFe7mSdF+XpapqKHu3lfCW5Pk/cAPTIlQDvY=";

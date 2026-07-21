@@ -79,7 +79,10 @@ jobs:
       - name: Build deb and apt repo
         run: |
           set -euo pipefail
+          manifest_sha256="$(sha256sum dist/kernel-package-source/kernel-manifest.json | awk '{ print $1 }')"
           YEET_VM_KERNEL_VERSION="linux-${KERNEL_VERSION}-yeet" \
+            YEET_VM_KERNEL_RELEASE_ID="$KERNEL_RELEASE" \
+            YEET_VM_KERNEL_MANIFEST_SHA256="$manifest_sha256" \
             scripts/build-kernel-deb.sh dist/kernel-package-source dist/kernel-packages/deb
           scripts/publish-apt-repo.sh dist/kernel-packages/deb dist/kernel-packages/site/apt
 
@@ -93,11 +96,16 @@ jobs:
 
           vmlinux_sha="$(sha256sum dist/kernel-package-source/vmlinux | awk '{ print $1 }')"
           kernel_config_sha="$(sha256sum dist/kernel-package-source/kernel.config | awk '{ print $1 }')"
+          manifest_sha256="$(sha256sum dist/kernel-package-source/kernel-manifest.json | awk '{ print $1 }')"
           asset_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${KERNEL_RELEASE}"
+          packaging_revision="${KERNEL_RELEASE##*-v}"
+          deb_version="${KERNEL_VERSION}-${packaging_revision}"
 
           cat >kernel-packages/metadata.nix <<NIX
           {
             kernelVersion = "$KERNEL_VERSION";
+            releaseId = "$KERNEL_RELEASE";
+            manifestSha256 = "$manifest_sha256";
             vmlinuxUrl = "$asset_base/vmlinux";
             kernelConfigUrl = "$asset_base/kernel.config";
             vmlinuxHash = "$(sri_from_hex "$vmlinux_sha")";
@@ -107,13 +115,54 @@ jobs:
           }
           NIX
 
+          jq -n \
+            --arg release_id "$KERNEL_RELEASE" \
+            --arg manifest_sha256 "$manifest_sha256" \
+            --arg version "$deb_version" '
+            {
+              schema_version: 1,
+              release_id: $release_id,
+              manifest_sha256: $manifest_sha256,
+              selector_schema_version: 2,
+              debian: {
+                repository_url: "https://yeetrun.github.io/yeet-vm-images/apt",
+                package: "yeet-vm-kernel",
+                version: $version
+              },
+              nix: {
+                metadata_url: "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/kernel-packages/metadata.nix"
+              }
+            }
+          ' >kernel-packages/catalog.json
+
+      - name: Verify selector package metadata
+        run: |
+          set -euo pipefail
+          manifest_sha256="$(sha256sum dist/kernel-package-source/kernel-manifest.json | awk '{ print $1 }')"
+          deb="$(find dist/kernel-packages/deb -maxdepth 1 -name 'yeet-vm-kernel_*_amd64.deb' -print -quit)"
+          test -n "$deb"
+          extracted="$RUNNER_TEMP/kernel-package"
+          dpkg-deb -x "$deb" "$extracted"
+          jq -e --arg release "$KERNEL_RELEASE" --arg manifest "$manifest_sha256" '
+            .schema_version == 2 and
+            .release_id == $release and
+            .manifest_sha256 == $manifest
+          ' "$extracted/usr/lib/yeet-vm/kernels/linux-${KERNEL_VERSION}-yeet/release.json"
+          grep -Fq "releaseId = \"$KERNEL_RELEASE\";" kernel-packages/metadata.nix
+          grep -Fq "manifestSha256 = \"$manifest_sha256\";" kernel-packages/metadata.nix
+          jq -e --arg release "$KERNEL_RELEASE" --arg manifest "$manifest_sha256" '
+            .release_id == $release and
+            .manifest_sha256 == $manifest and
+            .selector_schema_version == 2
+          ' kernel-packages/catalog.json
+
       - name: Commit Nix package metadata
         id: metadata_commit
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- kernel-packages/metadata.nix; then
-            echo "kernel-packages/metadata.nix is unchanged"
+          if git diff --quiet -- kernel-packages/metadata.nix kernel-packages/catalog.json; then
+            echo "kernel package metadata is unchanged"
             echo "metadata_commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
             exit 0
           fi
@@ -128,7 +177,7 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add kernel-packages/metadata.nix
+          git add kernel-packages/metadata.nix kernel-packages/catalog.json
           git commit -m "packages: update yeet VM kernel metadata for ${KERNEL_VERSION}"
           git push --force-with-lease=refs/heads/main:"$remote_base" origin HEAD:main
           echo "metadata_commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
@@ -141,6 +190,7 @@ jobs:
           mkdir -p "$site/kernel-packages"
           cp kernel-packages/flake.nix "$site/kernel-packages/flake.nix"
           cp kernel-packages/metadata.nix "$site/kernel-packages/metadata.nix"
+          cp kernel-packages/catalog.json "$site/kernel-packages/catalog.json"
           cp kernel-packages/yeet-kernel-package.nix "$site/kernel-packages/yeet-kernel-package.nix"
           tar -C "$site/kernel-packages" -czf "$site/yeet-vm-kernel-flake.tar.gz" .
           cat >"$site/index.html" <<HTML
@@ -167,3 +217,30 @@ jobs:
       - name: Deploy Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Re-download and verify published selector metadata
+        run: |
+          set -euo pipefail
+          page_url="${{ steps.deployment.outputs.page_url }}"
+          page_url="${page_url%/}"
+          manifest_sha256="$(sha256sum dist/kernel-package-source/kernel-manifest.json | awk '{ print $1 }')"
+          curl -fsSL --retry 6 --retry-all-errors \
+            -o "$RUNNER_TEMP/published-kernel-catalog.json" \
+            "$page_url/kernel-packages/catalog.json"
+          jq -e --arg release "$KERNEL_RELEASE" --arg manifest "$manifest_sha256" '
+            .release_id == $release and
+            .manifest_sha256 == $manifest and
+            .selector_schema_version == 2
+          ' "$RUNNER_TEMP/published-kernel-catalog.json"
+
+          curl -fsSL --retry 6 --retry-all-errors \
+            -o "$RUNNER_TEMP/published-metadata.nix" \
+            "$page_url/kernel-packages/metadata.nix"
+          cmp kernel-packages/metadata.nix "$RUNNER_TEMP/published-metadata.nix"
+
+          deb="$(find dist/kernel-packages/deb -maxdepth 1 -name 'yeet-vm-kernel_*_amd64.deb' -print -quit)"
+          deb_name="$(basename "$deb")"
+          curl -fsSL --retry 6 --retry-all-errors \
+            -o "$RUNNER_TEMP/$deb_name" \
+            "$page_url/apt/pool/main/$deb_name"
+          cmp "$deb" "$RUNNER_TEMP/$deb_name"

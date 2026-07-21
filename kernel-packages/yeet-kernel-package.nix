@@ -5,6 +5,8 @@
 , kernelConfig
 , vmlinuxSha256Raw
 , kernelConfigSha256Raw
+, releaseId
+, manifestSha256
 }:
 
 stdenvNoCC.mkDerivation {
@@ -20,7 +22,9 @@ stdenvNoCC.mkDerivation {
     install -D -m0644 ${kernelConfig} $out/lib/yeet-vm/kernels/linux-${kernelVersion}-yeet/kernel.config
     install -D -m0644 /dev/stdin $out/share/yeet-vm/kernel/selected.json <<JSON
     {
-      "schema_version": 1,
+      "schema_version": 2,
+      "release_id": "${releaseId}",
+      "manifest_sha256": "${manifestSha256}",
       "version": "linux-${kernelVersion}-yeet",
       "kernel": "$out/lib/yeet-vm/kernels/linux-${kernelVersion}-yeet/vmlinux",
       "kernel_config": "$out/lib/yeet-vm/kernels/linux-${kernelVersion}-yeet/kernel.config",

@@ -1,4 +1,4 @@
-name: Sync latest stable Linux kernel VM images
+name: Sync latest stable Linux kernel component
 
 on:
   schedule:
@@ -6,17 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: Build even if latest manifests already use the detected kernel.
+        description: Publish a new packaging revision for the detected stable kernel.
         required: true
         type: boolean
         default: false
-      yeet_ref:
-        description: yeet repository ref used to build guest tools.
-        required: true
-        default: main
 
 permissions:
   contents: write
+  pull-requests: write
   pages: write
   id-token: write
 
@@ -28,16 +25,9 @@ jobs:
       kernel_version: ${{ steps.kernel.outputs.kernel_version }}
       kernel_source_url: ${{ steps.kernel.outputs.kernel_source_url }}
       kernel_source_sha256: ${{ steps.kernel.outputs.kernel_source_sha256 }}
-      ubuntu_build: ${{ steps.plan.outputs.ubuntu_build }}
-      ubuntu_version: ${{ steps.plan.outputs.ubuntu_version }}
-      ubuntu_image_revision: ${{ steps.plan.outputs.ubuntu_image_revision }}
-      nixos_build: ${{ steps.plan.outputs.nixos_build }}
-      nixos_version: ${{ steps.plan.outputs.nixos_version }}
-      nixos_image_revision: ${{ steps.plan.outputs.nixos_image_revision }}
-      kernel_current_release: ${{ steps.plan.outputs.kernel_current_release }}
       kernel_release: ${{ steps.plan.outputs.kernel_release }}
       kernel_release_build: ${{ steps.plan.outputs.kernel_release_build }}
-      yeet_ref: ${{ steps.plan.outputs.yeet_ref }}
+      promotion_needed: ${{ steps.plan.outputs.promotion_needed }}
 
     steps:
       - name: Checkout
@@ -54,150 +44,58 @@ jobs:
           set -euo pipefail
 
           kernel_info="$(scripts/resolve-latest-kernel.sh)"
-          kernel_version="$(jq -r '.version' <<<"$kernel_info")"
-          kernel_source_url="$(jq -r '.source_url' <<<"$kernel_info")"
-          kernel_source_sha256="$(jq -r '.source_sha256' <<<"$kernel_info")"
-
           {
-            echo "kernel_version=$kernel_version"
-            echo "kernel_source_url=$kernel_source_url"
-            echo "kernel_source_sha256=$kernel_source_sha256"
+            echo "kernel_version=$(jq -r '.version' <<<"$kernel_info")"
+            echo "kernel_source_url=$(jq -r '.source_url' <<<"$kernel_info")"
+            echo "kernel_source_sha256=$(jq -r '.source_sha256' <<<"$kernel_info")"
           } >>"$GITHUB_OUTPUT"
 
-      - name: Download latest manifests
-        run: |
-          set -euo pipefail
-
-          release_base="https://github.com/${GITHUB_REPOSITORY}/releases/download"
-          curl -fsSL --retry 3 \
-            -o "$RUNNER_TEMP/ubuntu-latest-manifest.json" \
-            "$release_base/ubuntu-26.04-amd64-latest/manifest.json"
-          curl -fsSL --retry 3 \
-            -o "$RUNNER_TEMP/nixos-latest-manifest.json" \
-            "$release_base/nixos-26.05-amd64-latest/manifest.json"
-
-      - name: Plan image builds
+      - name: Plan kernel release and promotion
         id: plan
         env:
           FORCE: ${{ github.event.inputs.force || 'false' }}
           GH_TOKEN: ${{ github.token }}
           KERNEL_VERSION: ${{ steps.kernel.outputs.kernel_version }}
-          YEET_REF: ${{ github.event.inputs.yeet_ref || 'main' }}
         run: |
           set -euo pipefail
 
-          current_upstream_kernel() {
-            local manifest="$1"
-            jq -r '
-              if (.upstream_kernel_version // "") != "" then
-                .upstream_kernel_version
-              else
-                (.kernel_version // "" | sub("^linux-"; "") | sub("-yeet$"; ""))
-              end
-            ' "$manifest"
-          }
-
-          reject_kernel_downgrade() {
-            local image="$1"
-            local current_kernel="$2"
-            local comparison
-
-            if [ -z "$current_kernel" ]; then
-              return 0
-            fi
-
-            comparison="$(scripts/compare-kernel-versions.sh "$KERNEL_VERSION" "$current_kernel")"
-            if [ "$comparison" = "-1" ]; then
-              echo "::error title=Kernel downgrade detected::$image latest manifest uses upstream kernel $current_kernel, but kernel.org resolved $KERNEL_VERSION. Refusing to publish a downgrade."
-              exit 1
-            fi
-          }
-
-          should_build() {
-            local current_kernel="$1"
-            if [ "$FORCE" = "true" ] || [ "$current_kernel" != "$KERNEL_VERSION" ]; then
-              echo "true"
-            else
-              echo "false"
-            fi
-          }
-
-          action_label() {
-            local build="$1"
-            if [ "$build" = "true" ] && [ "$FORCE" = "true" ]; then
-              echo "build (forced)"
-            elif [ "$build" = "true" ]; then
-              echo "build"
-            else
-              echo "skip"
-            fi
-          }
-
-          ubuntu_current_kernel="$(current_upstream_kernel "$RUNNER_TEMP/ubuntu-latest-manifest.json")"
-          nixos_current_kernel="$(current_upstream_kernel "$RUNNER_TEMP/nixos-latest-manifest.json")"
-          reject_kernel_downgrade "Ubuntu 26.04 amd64" "$ubuntu_current_kernel"
-          reject_kernel_downgrade "NixOS 26.05 amd64" "$nixos_current_kernel"
-          ubuntu_build="$(should_build "$ubuntu_current_kernel")"
-          nixos_build="$(should_build "$nixos_current_kernel")"
-
-          ubuntu_next="$(scripts/next-image-version.sh ubuntu-26.04-amd64 "$KERNEL_VERSION")"
-          ubuntu_version="$(jq -r '.version' <<<"$ubuntu_next")"
-          ubuntu_image_revision="$(jq -r '.image_revision' <<<"$ubuntu_next")"
-
-          nixos_next="$(scripts/next-image-version.sh nixos-26.05-amd64 "$KERNEL_VERSION")"
-          nixos_version="$(jq -r '.version' <<<"$nixos_next")"
-          nixos_image_revision="$(jq -r '.image_revision' <<<"$nixos_next")"
-
-          kernel_release_info="$(scripts/resolve-kernel-release.sh "$KERNEL_VERSION")"
-          kernel_current_release="$(jq -r '.current_release' <<<"$kernel_release_info")"
-          kernel_next_release="$(jq -r '.next_release' <<<"$kernel_release_info")"
-          kernel_build_fingerprint="$(sha256sum scripts/build-linux-kernel.sh | awk '{ print $1 }')"
-          kernel_release="$kernel_next_release"
+          release_info="$(scripts/resolve-kernel-release.sh "$KERNEL_VERSION")"
+          current_release="$(jq -r '.current_release' <<<"$release_info")"
+          next_release="$(jq -r '.next_release' <<<"$release_info")"
+          kernel_release="$next_release"
           kernel_release_build="true"
+          promotion_needed="true"
 
-          if [ -n "$kernel_current_release" ]; then
+          if [ "$FORCE" != "true" ] && [ -n "$current_release" ]; then
+            current_dir="$RUNNER_TEMP/current-kernel-release"
             if YEET_KERNEL_VERSION="$KERNEL_VERSION" \
-              YEET_KERNEL_SOURCE_URL="${{ steps.kernel.outputs.kernel_source_url }}" \
-              YEET_KERNEL_SOURCE_SHA256="${{ steps.kernel.outputs.kernel_source_sha256 }}" \
-              YEET_KERNEL_CONFIG_URL="https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config" \
-              YEET_KERNEL_BUILD_FINGERPRINT="$kernel_build_fingerprint" \
-              scripts/download-kernel-release.sh "$kernel_current_release" "$RUNNER_TEMP/current-kernel-release"; then
-              kernel_release="$kernel_current_release"
+              scripts/download-kernel-release.sh "$current_release" "$current_dir"; then
+              kernel_release="$current_release"
               kernel_release_build="false"
+              manifest_sha256="$(sha256sum "$current_dir/kernel-manifest.json" | awk '{ print $1 }')"
+              if jq -e --arg release "$current_release" --arg manifest "$manifest_sha256" '
+                any(.kernels[]; .kernel_id == $release and .manifest_sha256 == $manifest) and
+                .channels.amd64.stable == {kernel_id: $release, manifest_sha256: $manifest}
+              ' kernel-catalog.json >/dev/null; then
+                promotion_needed="false"
+              fi
             fi
-          fi
-          if [ "$kernel_release_build" = "true" ]; then
-            ubuntu_build="true"
-            nixos_build="true"
           fi
 
           {
-            echo "ubuntu_build=$ubuntu_build"
-            echo "ubuntu_version=$ubuntu_version"
-            echo "ubuntu_image_revision=$ubuntu_image_revision"
-            echo "nixos_build=$nixos_build"
-            echo "nixos_version=$nixos_version"
-            echo "nixos_image_revision=$nixos_image_revision"
-            echo "kernel_current_release=$kernel_current_release"
             echo "kernel_release=$kernel_release"
             echo "kernel_release_build=$kernel_release_build"
-            echo "yeet_ref=$YEET_REF"
+            echo "promotion_needed=$promotion_needed"
           } >>"$GITHUB_OUTPUT"
 
           {
-            echo "## Latest Stable Kernel Sync"
+            echo "## Latest Stable Kernel Component Sync"
             echo
-            echo "- Detected kernel: \`$KERNEL_VERSION\`"
-            echo "- Force build: \`$FORCE\`"
-            echo "- yeet ref: \`$YEET_REF\`"
-            echo
-            echo "| Image | Current upstream kernel | Action | Next version | Image revision |"
-            echo "| --- | --- | --- | --- | --- |"
-            echo "| Ubuntu 26.04 amd64 | \`${ubuntu_current_kernel:-unknown}\` | $(action_label "$ubuntu_build") | \`$ubuntu_version\` | \`$ubuntu_image_revision\` |"
-            echo "| NixOS 26.05 amd64 | \`${nixos_current_kernel:-unknown}\` | $(action_label "$nixos_build") | \`$nixos_version\` | \`$nixos_image_revision\` |"
-            echo
-            echo "- Kernel release: \`$kernel_release\`"
-            echo "- Kernel release build: \`$kernel_release_build\`"
+            echo "- Detected upstream kernel: \`$KERNEL_VERSION\`"
+            echo "- Immutable release: \`$kernel_release\`"
+            echo "- Build required: \`$kernel_release_build\`"
+            echo "- Catalog promotion required: \`$promotion_needed\`"
+            echo "- Forced packaging revision: \`$FORCE\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
   build-kernel:
@@ -214,69 +112,6 @@ jobs:
       overwrite_release: false
     secrets: inherit
 
-  build-ubuntu:
-    name: Build Ubuntu 26.04 latest stable kernel image
-    needs:
-      - detect
-      - build-kernel
-    if: >-
-      ${{
-        always() &&
-        needs.detect.outputs.ubuntu_build == 'true' &&
-        (needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped')
-      }}
-    uses: ./.github/workflows/build-ubuntu-26.04.yml
-    with:
-      version: ${{ needs.detect.outputs.ubuntu_version }}
-      yeet_ref: ${{ needs.detect.outputs.yeet_ref }}
-      ubuntu_cloud_base_url: https://cloud-images.ubuntu.com/resolute/current
-      ubuntu_cloud_image: resolute-server-cloudimg-amd64.tar.gz
-      firecracker_version: v1.16.1
-      kernel_version: ${{ needs.detect.outputs.kernel_version }}
-      upstream_kernel_version: ${{ needs.detect.outputs.kernel_version }}
-      image_revision: ${{ needs.detect.outputs.ubuntu_image_revision }}
-      kernel_release: ${{ needs.detect.outputs.kernel_release }}
-      kernel_source_url: ${{ needs.detect.outputs.kernel_source_url }}
-      kernel_source_sha256: ${{ needs.detect.outputs.kernel_source_sha256 }}
-      kernel_config_url: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
-      zstd_level: "10"
-      overwrite_release: false
-      publish_latest_alias: true
-      latest_alias: ubuntu-26.04-amd64-latest
-    secrets: inherit
-
-  build-nixos:
-    name: Build NixOS 26.05 latest stable kernel image
-    needs:
-      - detect
-      - build-kernel
-      - publish-kernel-packages
-    if: >-
-      ${{
-        always() &&
-        needs.detect.outputs.nixos_build == 'true' &&
-        (needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped') &&
-        needs.publish-kernel-packages.result == 'success'
-      }}
-    uses: ./.github/workflows/build-nixos-26.05.yml
-    with:
-      version: ${{ needs.detect.outputs.nixos_version }}
-      yeet_ref: ${{ needs.detect.outputs.yeet_ref }}
-      yeet_vm_images_ref: ${{ needs.publish-kernel-packages.outputs.metadata_commit }}
-      firecracker_version: v1.16.1
-      kernel_version: ${{ needs.detect.outputs.kernel_version }}
-      upstream_kernel_version: ${{ needs.detect.outputs.kernel_version }}
-      image_revision: ${{ needs.detect.outputs.nixos_image_revision }}
-      kernel_release: ${{ needs.detect.outputs.kernel_release }}
-      kernel_source_url: ${{ needs.detect.outputs.kernel_source_url }}
-      kernel_source_sha256: ${{ needs.detect.outputs.kernel_source_sha256 }}
-      kernel_config_url: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
-      zstd_level: "10"
-      overwrite_release: false
-      publish_latest_alias: true
-      latest_alias: nixos-26.05-amd64-latest
-    secrets: inherit
-
   publish-kernel-packages:
     name: Publish kernel package sources
     needs:
@@ -285,7 +120,7 @@ jobs:
     if: >-
       ${{
         always() &&
-        (needs.detect.outputs.ubuntu_build == 'true' || needs.detect.outputs.nixos_build == 'true') &&
+        needs.detect.outputs.promotion_needed == 'true' &&
         (needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped')
       }}
     uses: ./.github/workflows/publish-kernel-packages.yml
@@ -293,3 +128,55 @@ jobs:
       kernel_version: ${{ needs.detect.outputs.kernel_version }}
       kernel_release: ${{ needs.detect.outputs.kernel_release }}
     secrets: inherit
+
+  promote-kernel-catalog:
+    name: Open stable kernel catalog promotion PR
+    needs:
+      - detect
+      - build-kernel
+      - publish-kernel-packages
+    if: >-
+      ${{
+        always() &&
+        needs.detect.outputs.promotion_needed == 'true' &&
+        (needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped') &&
+        needs.publish-kernel-packages.result == 'success'
+      }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Download and verify immutable kernel release
+        env:
+          KERNEL_RELEASE: ${{ needs.detect.outputs.kernel_release }}
+          KERNEL_VERSION: ${{ needs.detect.outputs.kernel_version }}
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/kernel-release"
+          YEET_KERNEL_VERSION="$KERNEL_VERSION" \
+            scripts/download-kernel-release.sh "$KERNEL_RELEASE" "$release_dir"
+          manifest_sha256="$(sha256sum "$release_dir/kernel-manifest.json" | awk '{ print $1 }')"
+          scripts/update-kernel-catalog.sh \
+            --manifest "$release_dir/kernel-manifest.json" \
+            --manifest-sha256 "$manifest_sha256" \
+            --channel stable \
+            --catalog-in kernel-catalog.json \
+            --catalog-out "$RUNNER_TEMP/kernel-catalog.json"
+          mv "$RUNNER_TEMP/kernel-catalog.json" kernel-catalog.json
+          scripts/verify-component-catalogs.sh
+
+      - name: Open catalog promotion PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/kernel-${{ needs.detect.outputs.kernel_release }}
+          delete-branch: true
+          commit-message: catalog promote ${{ needs.detect.outputs.kernel_release }}
+          title: Promote ${{ needs.detect.outputs.kernel_release }}
+          body: |
+            Promotes the independently published kernel release after artifact and selector-package verification.
+
+            This changes only `kernel-catalog.json`; guest-base catalogs and legacy image aliases are untouched.
+          add-paths: kernel-catalog.json

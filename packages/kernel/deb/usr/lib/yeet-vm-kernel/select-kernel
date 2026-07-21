@@ -14,6 +14,7 @@ fi
 kernel_dir="/usr/lib/yeet-vm/kernels/$version"
 kernel="$kernel_dir/vmlinux"
 config="$kernel_dir/kernel.config"
+release_metadata="$kernel_dir/release.json"
 selector_dir="/etc/yeet-vm/kernel"
 selector="$selector_dir/selected.json"
 
@@ -25,6 +26,12 @@ if [ ! -r "$config" ]; then
 	echo "missing kernel config artifact: $config" >&2
 	exit 1
 fi
+if [ ! -r "$release_metadata" ]; then
+	echo "missing kernel release metadata: $release_metadata" >&2
+	exit 1
+fi
+release_id="$(jq -er '.release_id | select(type == "string")' "$release_metadata")"
+manifest_sha256="$(jq -er '.manifest_sha256 | select(type == "string" and test("^[0-9a-f]{64}$"))' "$release_metadata")"
 
 install -d -m 0755 "$selector_dir"
 kernel_sha="$(sha256sum "$kernel" | awk '{ print $1 }')"
@@ -32,7 +39,9 @@ config_sha="$(sha256sum "$config" | awk '{ print $1 }')"
 tmp="$(mktemp "$selector_dir/.selected.json.XXXXXX")"
 cat >"$tmp" <<JSON
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "release_id": "$release_id",
+  "manifest_sha256": "$manifest_sha256",
   "version": "$version",
   "kernel": "$kernel",
   "kernel_config": "$config",
