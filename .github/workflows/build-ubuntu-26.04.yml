@@ -1,192 +1,85 @@
-name: Build Ubuntu 26.04 VM image
+name: Build Ubuntu 26.04 guest base
 
 on:
-  workflow_call:
-    inputs:
-      version:
-        description: Release/image version to publish, for example ubuntu-26.04-amd64-kernel-7.1.1-v16.
-        required: true
-        type: string
-      yeet_ref:
-        description: yeet repository ref used to build guest/yeet-init and guest/yeet-agent.
-        required: false
-        type: string
-        default: main
-      ubuntu_cloud_base_url:
-        description: Ubuntu cloud image directory URL.
-        required: false
-        type: string
-        default: https://cloud-images.ubuntu.com/resolute/current
-      ubuntu_cloud_image:
-        description: Ubuntu cloud image tarball name.
-        required: false
-        type: string
-        default: resolute-server-cloudimg-amd64.tar.gz
-      firecracker_version:
-        description: Firecracker release version.
-        required: false
-        type: string
-        default: v1.16.1
-      kernel_version:
-        description: Linux kernel version to build.
-        required: false
-        type: string
-        default: "7.0"
-      upstream_kernel_version:
-        description: Upstream Linux kernel version, without linux- prefix or yeet localversion.
-        required: false
-        type: string
-        default: "7.0"
-      image_revision:
-        description: Numeric per-family image revision; must match the final v<N> suffix when present.
-        required: false
-        type: string
-        default: "0"
-      kernel_source_url:
-        description: Linux kernel source tarball URL.
-        required: false
-        type: string
-        default: https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.0.tar.xz
-      kernel_source_sha256:
-        description: Linux kernel source tarball SHA-256.
-        required: false
-        type: string
-        default: bb7f6d80b387c757b7d14bb93028fcb90f793c5c0d367736ee815a100b3891f0
-      kernel_config_url:
-        description: Firecracker guest kernel config URL.
-        required: false
-        type: string
-        default: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
-      kernel_release:
-        description: Canonical kernel release to consume. Empty builds the kernel locally.
-        required: false
-        type: string
-        default: ""
-      zstd_level:
-        description: zstd compression level for rootfs.ext4.zst.
-        required: false
-        type: string
-        default: "10"
-      overwrite_release:
-        description: Delete an existing release/tag with the same version before publishing.
-        required: false
-        type: boolean
-        default: false
-      publish_latest_alias:
-        description: Publish or refresh the catch-facing latest alias release.
-        required: false
-        type: boolean
-        default: true
-      latest_alias:
-        description: Release/tag name for the catch-facing latest alias.
-        required: false
-        type: string
-        default: ubuntu-26.04-amd64-latest
   workflow_dispatch:
     inputs:
-      version:
-        description: Release/image version to publish, for example ubuntu-26.04-amd64-kernel-7.1.1-v16.
+      guest_base_id:
+        description: Immutable guest base ID, for example guest-ubuntu-26.04-amd64-v1.
         required: true
       yeet_ref:
-        description: yeet repository ref used to build guest/yeet-init and guest/yeet-agent.
+        description: yeet repository ref used to build guest binaries.
         required: true
         default: main
-      ubuntu_cloud_base_url:
-        description: Ubuntu cloud image directory URL.
-        required: true
-        default: https://cloud-images.ubuntu.com/resolute/current
-      ubuntu_cloud_image:
-        description: Ubuntu cloud image tarball name.
-        required: true
-        default: resolute-server-cloudimg-amd64.tar.gz
-      firecracker_version:
-        description: Firecracker release version.
-        required: true
-        default: v1.16.1
-      kernel_version:
-        description: Linux kernel version to build.
-        required: true
-        default: "7.0"
-      upstream_kernel_version:
-        description: Upstream Linux kernel version, without linux- prefix or yeet localversion.
-        required: true
-        default: "7.0"
-      image_revision:
-        description: Numeric per-family image revision; must match the final v<N> suffix when present.
-        required: true
-        default: "0"
-      kernel_source_url:
-        description: Linux kernel source tarball URL.
-        required: true
-        default: https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.0.tar.xz
-      kernel_source_sha256:
-        description: Linux kernel source tarball SHA-256.
-        required: true
-        default: bb7f6d80b387c757b7d14bb93028fcb90f793c5c0d367736ee815a100b3891f0
-      kernel_config_url:
-        description: Firecracker guest kernel config URL.
-        required: true
-        default: https://raw.githubusercontent.com/firecracker-microvm/firecracker/86a2559b26a4b9a05405aeaa58bab0f7261d71bc/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
       kernel_release:
-        description: Canonical kernel release to consume. Empty builds the kernel locally.
-        required: false
-        default: ""
+        description: Immutable kernel release installed as the default guest selector.
+        required: true
+      kernel_manifest_sha256:
+        description: SHA-256 of the immutable kernel manifest.
+        required: true
       zstd_level:
         description: zstd compression level for rootfs.ext4.zst.
         required: true
         default: "10"
-      overwrite_release:
-        description: Delete an existing release/tag with the same version before publishing.
-        required: true
-        type: boolean
-        default: false
-      publish_latest_alias:
-        description: Publish or refresh the catch-facing latest alias release.
-        required: true
-        type: boolean
-        default: true
-      latest_alias:
-        description: Release/tag name for the catch-facing latest alias.
-        required: true
-        default: ubuntu-26.04-amd64-latest
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   build:
-    name: Build and publish image bundle
+    name: Build and publish Ubuntu guest base
+    if: ${{ github.repository == 'yeetrun/yeet-vm-images' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-
+    environment: vm-component-release
     env:
-      VERSION: ${{ inputs.version }}
-      OUT_DIR: dist/${{ inputs.version }}
-      UBUNTU_CLOUD_BASE_URL: ${{ inputs.ubuntu_cloud_base_url }}
-      UBUNTU_CLOUD_IMAGE: ${{ inputs.ubuntu_cloud_image }}
-      FIRECRACKER_VERSION: ${{ inputs.firecracker_version }}
-      KERNEL_OUT_DIR: dist/kernel-linux-${{ inputs.kernel_version }}
+      GUEST_BASE_ID: ${{ inputs.guest_base_id }}
       KERNEL_RELEASE: ${{ inputs.kernel_release }}
+      KERNEL_MANIFEST_SHA256: ${{ inputs.kernel_manifest_sha256 }}
+      OUT_DIR: dist/${{ inputs.guest_base_id }}
+      UBUNTU_CLOUD_BASE_URL: https://cloud-images.ubuntu.com/resolute/current
+      UBUNTU_CLOUD_IMAGE: resolute-server-cloudimg-amd64.tar.gz
       ZSTD_LEVEL: ${{ inputs.zstd_level }}
-      YEET_KERNEL_VERSION: ${{ inputs.kernel_version }}
-      YEET_KERNEL_SOURCE_URL: ${{ inputs.kernel_source_url }}
-      YEET_KERNEL_SOURCE_SHA256: ${{ inputs.kernel_source_sha256 }}
-      YEET_KERNEL_CONFIG_URL: ${{ inputs.kernel_config_url }}
-      YEET_KERNEL_WORK_DIR: ${{ github.workspace }}/.kernel-build-work
-      YEET_VM_IMAGE_VERSION: ${{ inputs.version }}
-      YEET_VM_UPSTREAM_KERNEL_VERSION: ${{ inputs.upstream_kernel_version }}
-      YEET_VM_IMAGE_REVISION: ${{ inputs.image_revision }}
       YEET_VM_IMAGE_PROFILE: fast
       YEET_VM_IMAGE_WORK_DIR: ${{ github.workspace }}/.build-work
       YEET_VM_INIT_BINARY: ${{ github.workspace }}/yeet-src/guest/yeet-init/target/x86_64-unknown-linux-musl/release/yeet-init
       YEET_VM_AGENT_BINARY: ${{ github.workspace }}/yeet-src/guest/yeet-agent/target/x86_64-unknown-linux-musl/release/yeet-agent
       YEET_VM_GHOSTTY_TERMINFO: ${{ github.workspace }}/assets/xterm-ghostty.terminfo
-      LATEST_ALIAS: ${{ inputs.latest_alias }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate immutable component inputs
+        run: |
+          set -euo pipefail
+          [[ "$GUEST_BASE_ID" =~ ^guest-ubuntu-26[.]04-amd64-v[1-9][0-9]*$ ]]
+          [[ "$KERNEL_RELEASE" =~ ^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$ ]]
+          [[ "$KERNEL_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          jq -e --arg release "$KERNEL_RELEASE" --arg manifest "$KERNEL_MANIFEST_SHA256" '
+            any(.kernels[]; .kernel_id == $release and .manifest_sha256 == $manifest) and
+            .channels.amd64.stable == {kernel_id: $release, manifest_sha256: $manifest}
+          ' kernel-catalog.json >/dev/null
+          jq -e --arg release "$KERNEL_RELEASE" --arg manifest "$KERNEL_MANIFEST_SHA256" '
+            .release_id == $release and
+            .manifest_sha256 == $manifest and
+            .selector_schema_version == 2
+          ' kernel-packages/catalog.json >/dev/null
+
+          manifest="$RUNNER_TEMP/kernel-manifest.json"
+          curl -fsSL --retry 3 \
+            -o "$manifest" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${KERNEL_RELEASE}/kernel-manifest.json"
+          [ "$(sha256sum "$manifest" | awk '{ print $1 }')" = "$KERNEL_MANIFEST_SHA256" ]
+          jq -e --arg release "$KERNEL_RELEASE" '
+            .schema_version == 1 and
+            .kernel_id == $release and
+            .architecture == "amd64" and
+            .guest_packages.selector_schema_version == 2 and
+            .guest_packages.release_id == $release
+          ' "$manifest" >/dev/null
+          echo "KERNEL_VERSION=$(jq -r '.upstream_version' "$manifest")" >>"$GITHUB_ENV"
 
       - name: Checkout yeet source
         uses: actions/checkout@v4
@@ -199,439 +92,202 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            bc \
-            bison \
-            build-essential \
             curl \
-            dwarves \
             e2fsprogs \
             file \
-            flex \
             jq \
-            libelf-dev \
-            libssl-dev \
             musl-tools \
             ncurses-bin \
-            xz-utils \
             zstd
 
-      - name: Verify catalog
-        run: scripts/verify-catalog.sh
+      - name: Verify catalogs
+        run: scripts/verify-component-catalogs.sh
 
       - name: Install mise
         run: |
           curl https://mise.run | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
 
       - name: Build yeet guest binaries
         run: |
+          set -euo pipefail
           cd yeet-src
           "$HOME/.local/bin/mise" install
           "$HOME/.local/bin/mise" run guest:init:build
           "$HOME/.local/bin/mise" run guest:agent:build
-          echo "YEET_SOURCE_REV=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "YEET_SOURCE_REV=$(git rev-parse HEAD)" >>"$GITHUB_ENV"
           test -x "$YEET_VM_INIT_BINARY"
           test -x "$YEET_VM_AGENT_BINARY"
 
-      - name: Prepare yeet-managed kernel
-        run: |
-          set -euo pipefail
-          if [ -n "$KERNEL_RELEASE" ]; then
-            scripts/download-kernel-release.sh "$KERNEL_RELEASE" "$KERNEL_OUT_DIR"
-          else
-            scripts/build-linux-kernel.sh "$KERNEL_OUT_DIR"
-          fi
-
-      - name: Build image bundle
+      - name: Build guest base
         run: |
           sudo env \
-            FIRECRACKER_VERSION="$FIRECRACKER_VERSION" \
             UBUNTU_CLOUD_BASE_URL="$UBUNTU_CLOUD_BASE_URL" \
             UBUNTU_CLOUD_IMAGE="$UBUNTU_CLOUD_IMAGE" \
-            YEET_KERNEL_SOURCE_URL="$YEET_KERNEL_SOURCE_URL" \
-            YEET_KERNEL_SOURCE_SHA256="$YEET_KERNEL_SOURCE_SHA256" \
             YEET_VM_IMAGE_PROFILE="$YEET_VM_IMAGE_PROFILE" \
-            YEET_VM_IMAGE_VERSION="$YEET_VM_IMAGE_VERSION" \
-            YEET_VM_UPSTREAM_KERNEL_VERSION="$YEET_VM_UPSTREAM_KERNEL_VERSION" \
-            YEET_VM_IMAGE_REVISION="$YEET_VM_IMAGE_REVISION" \
+            YEET_VM_GUEST_BASE_ID="$GUEST_BASE_ID" \
             YEET_VM_IMAGE_WORK_DIR="$YEET_VM_IMAGE_WORK_DIR" \
             YEET_VM_GHOSTTY_TERMINFO="$YEET_VM_GHOSTTY_TERMINFO" \
             YEET_VM_INIT_PATH="$YEET_VM_INIT_BINARY" \
             YEET_VM_AGENT_PATH="$YEET_VM_AGENT_BINARY" \
+            YEET_VM_KERNEL_RELEASE_ID="$KERNEL_RELEASE" \
+            YEET_VM_KERNEL_MANIFEST_SHA256="$KERNEL_MANIFEST_SHA256" \
+            YEET_VM_IMAGES_SOURCE_REV="$GITHUB_SHA" \
+            YEET_VM_WORKFLOW_RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             YEET_SOURCE_REV="$YEET_SOURCE_REV" \
-            YEET_VM_KERNEL_PATH="$GITHUB_WORKSPACE/$KERNEL_OUT_DIR/vmlinux" \
-            YEET_VM_KERNEL_VERSION="linux-${YEET_KERNEL_VERSION}-yeet" \
             ZSTD_LEVEL="$ZSTD_LEVEL" \
             scripts/build-ubuntu-26.04.sh "$OUT_DIR"
           sudo chown -R "$USER:$USER" "$OUT_DIR"
 
-      - name: Verify bundle
+      - name: Verify guest-base boundary
         run: |
           set -euo pipefail
-          for asset in manifest.json vmlinux rootfs.ext4.zst firecracker jailer kernel.config checksums.txt; do
-            test -s "$OUT_DIR/$asset"
-          done
-          if [ -e "$OUT_DIR/initrd.img" ]; then
-            echo "fast image bundle must not include initrd.img" >&2
+          actual="$(find "$OUT_DIR" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort)"
+          expected="$(printf '%s\n' checksums.txt guest-manifest.json provenance.json rootfs.ext4.zst | LC_ALL=C sort)"
+          if [ "$actual" != "$expected" ]; then
+            echo "guest-base release staging contains unexpected host artifacts" >&2
+            printf '%s\n' "$actual" >&2
             exit 1
           fi
           (
             cd "$OUT_DIR"
-            sha256sum -c checksums.txt
+            sha256sum --check --strict checksums.txt
           )
-          check_manifest_checksum() {
-            local asset="$1"
-            local want
-            local got
-            want="$(jq -r --arg asset "$asset" '.checksums[$asset] // empty' "$OUT_DIR/manifest.json")"
-            if [ -z "$want" ]; then
-              echo "manifest missing checksum for $asset" >&2
-              exit 1
-            fi
-            got="$(sha256sum "$OUT_DIR/$asset" | awk '{ print $1 }')"
-            if [ "$got" != "$want" ]; then
-              echo "manifest checksum mismatch for $asset: got $got, want $want" >&2
-              exit 1
-            fi
-          }
-          check_manifest_checksum vmlinux
-          check_manifest_checksum kernel.config
-          check_manifest_checksum rootfs.ext4.zst
-          check_manifest_checksum firecracker
-          check_manifest_checksum jailer
-          firecracker_version_actual="$("$OUT_DIR/firecracker" --version | sed -n '1p')"
-          if [ "$firecracker_version_actual" != "Firecracker $FIRECRACKER_VERSION" ]; then
-            echo "firecracker version mismatch: got $firecracker_version_actual, want $FIRECRACKER_VERSION" >&2
-            exit 1
-          fi
-          jailer_version="$("$OUT_DIR/jailer" --version)"
-          if [ "$jailer_version" != "Jailer $FIRECRACKER_VERSION" ]; then
-            echo "jailer version mismatch: got $jailer_version, want $FIRECRACKER_VERSION" >&2
-            exit 1
-          fi
-          jq -e '
-            .image_profile == "fast" and
-            .kernel_policy == "yeet-managed" and
-            .snap_support == false and
-            (.initrd | not) and
-            .guest_init == "/usr/local/lib/yeet-vm/yeet-init" and
-            (.guest_init_sha256 | test("^[0-9a-f]{64}$")) and
-            .guest_agent == "/usr/local/lib/yeet-vm/yeet-agent" and
-            (.guest_agent_sha256 | test("^[0-9a-f]{64}$")) and
-            .kernel == "vmlinux" and
-            .rootfs == "rootfs.ext4.zst" and
-            .jailer == "jailer" and
-            (.image_revision | type == "number") and
-            .image_revision == (env.YEET_VM_IMAGE_REVISION | tonumber) and
-            .upstream_kernel_version == env.YEET_VM_UPSTREAM_KERNEL_VERSION and
-            .kernel_source_url == env.YEET_KERNEL_SOURCE_URL and
-            .kernel_source_sha256 == env.YEET_KERNEL_SOURCE_SHA256 and
-            .provenance.firecracker_version == env.FIRECRACKER_VERSION and
-            .provenance.yeet_rev == env.YEET_SOURCE_REV and
-            .provenance.kernel_source == "yeet-managed"
-          ' "$OUT_DIR/manifest.json"
-          grep -q '^CONFIG_MODULES=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_VIRTIO_MMIO=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_VIRTIO_BLK=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_VIRTIO_NET=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_VSOCKETS=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_VIRTIO_VSOCKETS=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_EXT4_FS=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_AUTOFS_FS=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_IP_PNP=y$' "$OUT_DIR/kernel.config"
-          grep -q '^CONFIG_IP_PNP_DHCP=y$' "$OUT_DIR/kernel.config"
-          for config in \
-            CONFIG_TUN \
-            CONFIG_SECCOMP \
-            CONFIG_SECCOMP_FILTER \
-            CONFIG_IPV6 \
-            CONFIG_IPV6_MULTIPLE_TABLES \
-            CONFIG_NETFILTER \
-            CONFIG_NETFILTER_ADVANCED \
-            CONFIG_NETFILTER_XTABLES \
-            CONFIG_NF_CONNTRACK \
-            CONFIG_NF_CONNTRACK_MARK \
-            CONFIG_NF_NAT \
-            CONFIG_NF_NAT_MASQUERADE \
-            CONFIG_NF_TABLES \
-            CONFIG_NF_TABLES_IPV4 \
-            CONFIG_NF_TABLES_IPV6 \
-            CONFIG_NF_TABLES_INET \
-            CONFIG_NFT_CT \
-            CONFIG_NFT_NAT \
-            CONFIG_NFT_MASQ \
-            CONFIG_NFT_REJECT \
-            CONFIG_NFT_REJECT_IPV6 \
-            CONFIG_NFT_REJECT_INET \
-            CONFIG_NFT_COMPAT \
-            CONFIG_NETFILTER_XT_TARGET_CONNMARK \
-            CONFIG_NETFILTER_XT_TARGET_MASQUERADE \
-            CONFIG_NETFILTER_XT_TARGET_MARK \
-            CONFIG_NETFILTER_XT_NAT \
-            CONFIG_NETFILTER_XT_MATCH_CONNMARK \
-            CONFIG_NETFILTER_XT_MATCH_MARK \
-            CONFIG_NETFILTER_XT_MATCH_COMMENT \
-            CONFIG_NETFILTER_XT_MATCH_CONNTRACK \
-            CONFIG_NETFILTER_XT_MATCH_ADDRTYPE \
-            CONFIG_IP6_NF_IPTABLES
-          do
-            grep -q "^${config}=y$" "$OUT_DIR/kernel.config"
-          done
+          jq -e --arg id "$GUEST_BASE_ID" --arg commit "$GITHUB_SHA" '
+            .schema_version == 1 and
+            .guest_base_id == $id and
+            .os == "ubuntu" and
+            .os_version == "26.04" and
+            .architecture == "amd64" and
+            .default_kernel_channel == "stable" and
+            (.rootfs.sha256 | test("^[0-9a-f]{64}$")) and
+            (.rootfs.uncompressed_bytes | type == "number" and floor == . and . > 0) and
+            .provenance.source_commit == $commit
+          ' "$OUT_DIR/guest-manifest.json" >/dev/null
+          jq -e --arg id "$GUEST_BASE_ID" --arg release "$KERNEL_RELEASE" --arg manifest "$KERNEL_MANIFEST_SHA256" '
+            .schema_version == 1 and
+            .guest_base_id == $id and
+            .kernel_request == {release_id: $release, manifest_sha256: $manifest}
+          ' "$OUT_DIR/provenance.json" >/dev/null
+
           zstd -d -f --no-progress -o "$RUNNER_TEMP/rootfs.ext4" "$OUT_DIR/rootfs.ext4.zst"
           rootfs_features="$(dumpe2fs -h "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F: '/Filesystem features/ { print $2; exit }')"
           if printf '%s\n' "$rootfs_features" | grep -Eq '(^|[[:space:]])orphan_file($|[[:space:]])|(^|[[:space:]])FEATURE_'; then
             echo "rootfs ext4 features are not compatible with common LTS host tooling: $rootfs_features" >&2
             exit 1
           fi
-          debugfs -R 'stat /usr/local/lib/yeet-vm/yeet-init' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R 'stat /usr/local/lib/yeet-vm/yeet-agent' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R 'stat /etc/systemd/system/yeet-agent.service' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R 'stat /usr/share/doc/yeet-vm-image/init.md' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R 'stat /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R 'stat /etc/apt/sources.list.d/yeet-vm-kernel.sources' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R 'stat /etc/yeet-vm/kernel/selected.json' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R 'stat /etc/needrestart/conf.d/99-yeet-vm-kernel.conf' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R 'stat /etc/terminfo/x/xterm-ghostty' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R 'stat /etc/sysctl.d/99-yeet-vm-router.conf' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R 'stat /etc/tmpfiles.d/yeet-vm-tun.conf' "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R "dump -p /usr/local/lib/yeet-vm/yeet-init $RUNNER_TEMP/yeet-init" "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs -R "dump -p /usr/local/lib/yeet-vm/yeet-agent $RUNNER_TEMP/yeet-agent" "$RUNNER_TEMP/rootfs.ext4" >/dev/null
-          debugfs_cat() {
-            debugfs -R "cat $1" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null || true
-          }
-          assert_unit_masked() {
-            local unit="$1"
-            local link
-            link="$(debugfs -R "stat /etc/systemd/system/$unit" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F': ' '/Fast link dest:/ { gsub(/^"|"$/, "", $2); print $2; exit }')"
-            if [ "$link" != "/dev/null" ]; then
-              echo "expected $unit to be masked to /dev/null, got ${link:-missing}" >&2
-              exit 1
-            fi
-          }
-          assert_symlink_target() {
-            local path="$1"
-            local target="$2"
-            local link
-            link="$(debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk -F': ' '/Fast link dest:/ { gsub(/^"|"$/, "", $2); print $2; exit }')"
-            if [ "$link" != "$target" ]; then
-              echo "expected $path to point to $target, got ${link:-missing}" >&2
-              exit 1
-            fi
-          }
-          assert_debugfs_type() {
-            local path="$1"
-            local want="$2"
-            local got
-            got="$(debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null | awk '
-              /Type:/ {
-                for (i = 1; i <= NF; i++) {
-                  if ($i == "Type:") {
-                    print $(i + 1)
-                    exit
-                  }
-                }
-              }
-            ')"
-            if [ "$got" != "$want" ]; then
-              echo "expected $path type $want, got ${got:-missing}" >&2
-              exit 1
-            fi
-          }
-          assert_path_exists() {
-            local path="$1"
-            if ! debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" >/dev/null 2>&1; then
-              echo "expected $path to exist" >&2
-              exit 1
-            fi
-          }
-          assert_dpkg_list_contains() {
-            local package="$1"
-            local path="$2"
-            if ! debugfs_cat "/var/lib/dpkg/info/${package}.list" | grep -qx "$path"; then
-              echo "expected package $package to own $path" >&2
-              exit 1
-            fi
-          }
-          assert_package_not_installed() {
-            local package="$1"
-            if debugfs_cat "/var/lib/dpkg/status" | awk -v pkg="$package" '
-              $1 == "Package:" { package = $2 }
-              $1 == "Status:" && package == pkg && $0 ~ /install ok installed/ { found = 1 }
-              END { exit found ? 0 : 1 }
-            '; then
-              echo "expected package $package to be absent from fast image" >&2
-              exit 1
-            fi
-          }
-          assert_package_installed() {
-            local package="$1"
-            if ! debugfs_cat "/var/lib/dpkg/status" | awk -v pkg="$package" '
-              $1 == "Package:" { package = $2 }
-              $1 == "Status:" && package == pkg && $0 ~ /install ok installed/ { found = 1 }
-              END { exit found ? 0 : 1 }
-            '; then
-              echo "expected package $package to be installed in fast image" >&2
-              exit 1
-            fi
-          }
-          assert_package_installed iptables
-          assert_package_installed nftables
-          assert_package_installed yeet-vm-kernel
-          assert_package_not_installed netplan.io
-          assert_package_not_installed networkd-dispatcher
-          assert_package_not_installed chrony
-          assert_package_not_installed sysstat
-          assert_package_not_installed fwupd
-          assert_package_not_installed fwupd-signed
-          assert_package_not_installed update-notifier-common
-          assert_package_not_installed update-manager-core
-          assert_package_not_installed xfsprogs
-          assert_debugfs_type /usr/sbin directory
-          assert_symlink_target /sbin usr/sbin
           for path in \
-            /usr/sbin/sshd \
-            /usr/sbin/agetty \
-            /usr/sbin/unix_chkpwd \
-            /usr/sbin/iptables-nft \
-            /usr/sbin/xtables-nft-multi
+            /usr/local/lib/yeet-vm/yeet-init \
+            /usr/local/lib/yeet-vm/yeet-agent \
+            /etc/systemd/system/yeet-agent.service \
+            /etc/apt/sources.list.d/yeet-vm-kernel.sources \
+            /etc/yeet-vm/kernel/selected.json
           do
-            assert_path_exists "$path"
+            debugfs -R "stat $path" "$RUNNER_TEMP/rootfs.ext4" >/dev/null
           done
-          assert_dpkg_list_contains openssh-server /usr/sbin/sshd
-          assert_dpkg_list_contains util-linux /usr/sbin/agetty
-          assert_dpkg_list_contains libpam-modules-bin /usr/sbin/unix_chkpwd
-          assert_dpkg_list_contains iptables /usr/sbin/iptables-nft
-          assert_dpkg_list_contains iptables /usr/sbin/xtables-nft-multi
-          assert_unit_masked netplan-configure.service
-          assert_unit_masked networkd-dispatcher.service
-          assert_unit_masked sysstat.service
-          assert_unit_masked e2scrub_reap.service
-          assert_unit_masked fwupd.service
-          assert_unit_masked fwupd-refresh.service
-          assert_unit_masked fwupd-refresh.timer
-          assert_unit_masked update-notifier-download.service
-          assert_unit_masked update-notifier-download.timer
-          assert_unit_masked update-notifier-motd.service
-          assert_unit_masked update-notifier-motd.timer
-          assert_unit_masked xfs_scrub_all.service
-          assert_unit_masked xfs_scrub_all.timer
-          assert_unit_masked proc-sys-fs-binfmt_misc.automount
-          assert_unit_masked proc-sys-fs-binfmt_misc.mount
-          assert_unit_masked ldconfig.service
-          assert_unit_masked keyboard-setup.service
-          assert_unit_masked systemd-modules-load.service
-          assert_unit_masked modprobe@.service
-          assert_unit_masked modprobe@configfs.service
-          assert_unit_masked modprobe@drm.service
-          assert_unit_masked modprobe@efi_pstore.service
-          assert_unit_masked modprobe@fuse.service
-          assert_symlink_target /etc/systemd/system/multi-user.target.wants/yeet-agent.service ../yeet-agent.service
-          debugfs_cat /etc/systemd/system/yeet-agent.service | grep -q '^ExecStart=/usr/local/lib/yeet-vm/yeet-agent$'
-          debugfs_cat /etc/systemd/system/yeet-agent.service | grep -q '^Restart=always$'
-          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Types: deb$'
-          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^URIs: https://yeetrun.github.io/yeet-vm-images/apt$'
-          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Suites: stable$'
-          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Components: main$'
-          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Architectures: amd64$'
-          debugfs_cat /etc/apt/sources.list.d/yeet-vm-kernel.sources | grep -q '^Signed-By: /etc/apt/keyrings/yeet-vm-kernel-archive-keyring.gpg$'
-          debugfs_cat /var/lib/dpkg/status | awk '
-            $1 == "Package:" { package = $2 }
-            $1 == "Version:" && package == "yeet-vm-kernel" { version = $2 }
-            END { exit version == ENVIRON["YEET_KERNEL_VERSION"] ? 0 : 1 }
-          '
-          debugfs_cat /etc/yeet-vm/kernel/selected.json | jq -e --arg version "linux-${YEET_KERNEL_VERSION}-yeet" '
-            .schema_version == 1 and
-            .version == $version and
-            .kernel == ("/usr/lib/yeet-vm/kernels/" + $version + "/vmlinux") and
-            .kernel_config == ("/usr/lib/yeet-vm/kernels/" + $version + "/kernel.config") and
-            (.sha256.vmlinux | test("^[0-9a-f]{64}$")) and
-            (.sha256["kernel.config"] | test("^[0-9a-f]{64}$"))
-          '
-          debugfs_cat /etc/needrestart/conf.d/99-yeet-vm-kernel.conf | grep -q '^\$nrconf{kernelhints} = 0;$'
-          debugfs_cat /etc/sysctl.d/99-yeet-vm-router.conf | grep -q '^net.ipv4.ip_forward = 1$'
-          debugfs_cat /etc/sysctl.d/99-yeet-vm-router.conf | grep -q '^net.ipv6.conf.all.forwarding = 1$'
-          debugfs_cat /etc/tmpfiles.d/yeet-vm-tun.conf | grep -q '^c /dev/net/tun 0666 root root 10:200$'
-          expected_guest_init_sha="$(sha256sum "$YEET_VM_INIT_BINARY" | awk '{ print $1 }')"
-          embedded_guest_init_sha="$(sha256sum "$RUNNER_TEMP/yeet-init" | awk '{ print $1 }')"
-          manifest_guest_init_sha="$(jq -r '.guest_init_sha256' "$OUT_DIR/manifest.json")"
-          if [ "$manifest_guest_init_sha" != "$expected_guest_init_sha" ] || [ "$manifest_guest_init_sha" != "$embedded_guest_init_sha" ]; then
-            echo "guest_init_sha256 mismatch: manifest=$manifest_guest_init_sha build=$expected_guest_init_sha embedded=$embedded_guest_init_sha" >&2
-            exit 1
-          fi
-          expected_guest_agent_sha="$(sha256sum "$YEET_VM_AGENT_BINARY" | awk '{ print $1 }')"
-          embedded_guest_agent_sha="$(sha256sum "$RUNNER_TEMP/yeet-agent" | awk '{ print $1 }')"
-          manifest_guest_agent_sha="$(jq -r '.guest_agent_sha256' "$OUT_DIR/manifest.json")"
-          if [ "$manifest_guest_agent_sha" != "$expected_guest_agent_sha" ] || [ "$manifest_guest_agent_sha" != "$embedded_guest_agent_sha" ]; then
-            echo "guest_agent_sha256 mismatch: manifest=$manifest_guest_agent_sha build=$expected_guest_agent_sha embedded=$embedded_guest_agent_sha" >&2
-            exit 1
-          fi
-          jq . "$OUT_DIR/manifest.json"
+          debugfs -R "cat /etc/yeet-vm/kernel/selected.json" "$RUNNER_TEMP/rootfs.ext4" 2>/dev/null |
+            jq -e --arg release "$KERNEL_RELEASE" --arg manifest "$KERNEL_MANIFEST_SHA256" '
+              .schema_version == 2 and
+              .release_id == $release and
+              .manifest_sha256 == $manifest and
+              (.sha256.vmlinux | test("^[0-9a-f]{64}$")) and
+              (.sha256["kernel.config"] | test("^[0-9a-f]{64}$"))
+            ' >/dev/null
 
       - name: Prepare release notes
         run: |
-          set -euo pipefail
-          kernel_version="$(jq -r '.kernel_version' "$OUT_DIR/manifest.json")"
-          ubuntu_url="$(jq -r '.provenance.ubuntu_cloud_image_url' "$OUT_DIR/manifest.json")"
-          firecracker_version="$(jq -r '.provenance.firecracker_version' "$OUT_DIR/manifest.json")"
-          cat >"$OUT_DIR/release-notes.md" <<EOF
-          Experimental yeet Ubuntu 26.04 amd64 VM image bundle.
+          cat >"$RUNNER_TEMP/guest-release-notes.md" <<EOF
+          Experimental yeet Ubuntu 26.04 amd64 guest base.
 
-          - Version: \`$VERSION\`
-          - Kernel: \`$kernel_version\`
-          - Profile: fast, no initrd, no snap support, includes yeet-init and yeet-agent
-          - Ubuntu source image: <$ubuntu_url>
-          - Firecracker: \`$firecracker_version\`
+          - Guest base: \`$GUEST_BASE_ID\`
+          - Default kernel release: \`$KERNEL_RELEASE\`
+          - Root filesystem only; no host Firecracker, jailer, or boot kernel artifacts
 
-          See \`manifest.json\` for full checksums and provenance.
+          See \`guest-manifest.json\` and \`provenance.json\` for immutable identities and checksums.
           EOF
 
-      - name: Check release target
+      - name: Check immutable release target
+        id: release_target
         run: |
           set -euo pipefail
-          overwrite="${{ inputs.overwrite_release }}"
           release_exists=0
           tag_exists=0
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            release_exists=1
-          fi
-          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-            tag_exists=1
-          fi
+          gh release view "$GUEST_BASE_ID" >/dev/null 2>&1 && release_exists=1
+          git ls-remote --exit-code --tags origin "refs/tags/$GUEST_BASE_ID" >/dev/null 2>&1 && tag_exists=1
           if [ "$release_exists" -eq 0 ] && [ "$tag_exists" -eq 0 ]; then
+            echo "published=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$overwrite" != "true" ]; then
-            echo "Release or tag $VERSION already exists. Re-run with overwrite_release=true to replace it." >&2
+          if [ "$release_exists" -ne 1 ] || [ "$tag_exists" -ne 1 ]; then
+            echo "guest-base release/tag state is incomplete for $GUEST_BASE_ID" >&2
             exit 1
           fi
-          if [ "$release_exists" -eq 1 ]; then
-            gh release delete "$VERSION" --cleanup-tag --yes
-          elif [ "$tag_exists" -eq 1 ]; then
-            git push origin ":refs/tags/$VERSION"
-          fi
+          published="$RUNNER_TEMP/published-guest-manifest.json"
+          gh release download "$GUEST_BASE_ID" --pattern guest-manifest.json --output "$published"
+          expected_sha="$(sha256sum "$OUT_DIR/guest-manifest.json" | awk '{ print $1 }')"
+          published_sha="$(sha256sum "$published" | awk '{ print $1 }')"
+          [ "$published_sha" = "$expected_sha" ] || {
+            echo "immutable guest-base release has a different manifest digest" >&2
+            exit 1
+          }
+          echo "published=true" >>"$GITHUB_OUTPUT"
 
-      - name: Publish release
+      - name: Publish immutable guest base
+        if: ${{ steps.release_target.outputs.published != 'true' }}
         run: |
-          scripts/publish-github-release-assets.sh \
-            "$VERSION" \
-            "$VERSION" \
+          scripts/publish-guest-base-assets.sh \
+            "$GUEST_BASE_ID" \
+            "$GUEST_BASE_ID" \
             "$GITHUB_SHA" \
-            "$OUT_DIR/release-notes.md" \
+            "$RUNNER_TEMP/guest-release-notes.md" \
             "$OUT_DIR"
 
-      - name: Publish latest alias
-        if: ${{ inputs.publish_latest_alias }}
+      - name: Re-download and verify published guest base
         run: |
           set -euo pipefail
-          if gh release view "$LATEST_ALIAS" >/dev/null 2>&1; then
-            gh release delete "$LATEST_ALIAS" --cleanup-tag --yes
-          elif git ls-remote --exit-code --tags origin "refs/tags/$LATEST_ALIAS" >/dev/null 2>&1; then
-            git push origin ":refs/tags/$LATEST_ALIAS"
-          fi
-          scripts/publish-github-release-assets.sh \
-            "$LATEST_ALIAS" \
-            "$LATEST_ALIAS" \
-            "$GITHUB_SHA" \
-            "$OUT_DIR/release-notes.md" \
-            "$OUT_DIR"
+          release_json="$RUNNER_TEMP/guest-release.json"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GUEST_BASE_ID}" >"$release_json"
+          jq -e --arg tag "$GUEST_BASE_ID" '
+            .tag_name == $tag and
+            .draft == false and
+            .prerelease == false and
+            .immutable == true and
+            ([.assets[].name] | sort) == ["checksums.txt", "guest-manifest.json", "provenance.json", "rootfs.ext4.zst"] and
+            all(.assets[]; .state == "uploaded" and (.digest | test("^sha256:[0-9a-f]{64}$")))
+          ' "$release_json" >/dev/null
+          published_dir="$RUNNER_TEMP/published-guest-base"
+          mkdir -p "$published_dir"
+          gh release download "$GUEST_BASE_ID" --dir "$published_dir"
+          for asset in checksums.txt guest-manifest.json provenance.json rootfs.ext4.zst; do
+            cmp "$OUT_DIR/$asset" "$published_dir/$asset"
+          done
+          (
+            cd "$published_dir"
+            sha256sum --check --strict checksums.txt
+          )
+
+      - name: Prepare candidate catalog change
+        run: |
+          set -euo pipefail
+          manifest_sha256="$(sha256sum "$OUT_DIR/guest-manifest.json" | awk '{ print $1 }')"
+          scripts/update-guest-catalog.sh \
+            --manifest "$OUT_DIR/guest-manifest.json" \
+            --manifest-sha256 "$manifest_sha256" \
+            --channel candidate \
+            --catalog-in guest-catalog.json \
+            --catalog-out "$RUNNER_TEMP/guest-catalog.json"
+          mv "$RUNNER_TEMP/guest-catalog.json" guest-catalog.json
+          scripts/verify-component-catalogs.sh
+
+      - name: Open candidate catalog PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/${{ inputs.guest_base_id }}
+          delete-branch: true
+          commit-message: catalog add ${{ inputs.guest_base_id }} candidate
+          title: Add ${{ inputs.guest_base_id }} as candidate
+          body: |
+            Adds the independently published Ubuntu guest base to the candidate channel.
+
+            Stable promotion remains a separate reviewed change after Catch provisioning validation.
+          add-paths: guest-catalog.json

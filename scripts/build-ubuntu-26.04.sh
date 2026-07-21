@@ -2,22 +2,21 @@
 # Copyright (c) 2025 AUTHORS All rights reserved.
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
+# shellcheck disable=SC2016 # Literal package metadata and Perl config expressions.
 
 set -euo pipefail
 
 profile="${YEET_VM_IMAGE_PROFILE:-fast}"
-version="${YEET_VM_IMAGE_VERSION:-ubuntu-26.04-amd64-v14}"
-out_dir="${1:-dist/$version}"
+guest_base_id="${YEET_VM_GUEST_BASE_ID:-}"
+out_dir="${1:-dist/$guest_base_id}"
 work_dir="${YEET_VM_IMAGE_WORK_DIR:-}"
-kernel_path="${YEET_VM_KERNEL_PATH:-}"
-kernel_version_override="${YEET_VM_KERNEL_VERSION:-}"
-upstream_kernel_version="${YEET_VM_UPSTREAM_KERNEL_VERSION:-}"
-kernel_source_url="${YEET_KERNEL_SOURCE_URL:-}"
-kernel_source_sha256="${YEET_KERNEL_SOURCE_SHA256:-}"
-image_revision="${YEET_VM_IMAGE_REVISION:-}"
+kernel_release="${YEET_VM_KERNEL_RELEASE_ID:-}"
+kernel_manifest_sha256="${YEET_VM_KERNEL_MANIFEST_SHA256:-}"
 guest_init_path="${YEET_VM_INIT_PATH:-}"
 guest_agent_path="${YEET_VM_AGENT_PATH:-}"
 yeet_source_rev="${YEET_SOURCE_REV:-}"
+images_source_rev="${YEET_VM_IMAGES_SOURCE_REV:-}"
+workflow_run_url="${YEET_VM_WORKFLOW_RUN_URL:-}"
 script_source="${BASH_SOURCE[0]}"
 script_dir="${script_source%/*}"
 if [ "$script_dir" = "$script_source" ]; then
@@ -29,89 +28,9 @@ ghostty_terminfo_source="${YEET_VM_GHOSTTY_TERMINFO:-$repo_root/assets/xterm-gho
 
 ubuntu_base_url="${UBUNTU_CLOUD_BASE_URL:-https://cloud-images.ubuntu.com/resolute/current}"
 ubuntu_image="${UBUNTU_CLOUD_IMAGE:-resolute-server-cloudimg-amd64.tar.gz}"
-extract_vmlinux_url="${LINUX_EXTRACT_VMLINUX_URL:-https://raw.githubusercontent.com/torvalds/linux/v7.0/scripts/extract-vmlinux}"
-firecracker_version="${FIRECRACKER_VERSION:-v1.16.1}"
-firecracker_arch="${FIRECRACKER_ARCH:-x86_64}"
-firecracker_tgz="firecracker-${firecracker_version}-${firecracker_arch}.tgz"
-firecracker_url="${FIRECRACKER_URL:-https://github.com/firecracker-microvm/firecracker/releases/download/${firecracker_version}/${firecracker_tgz}}"
 zstd_level="${ZSTD_LEVEL:-10}"
 yeet_vm_kernel_apt_uri="${YEET_VM_KERNEL_APT_URI:-https://yeetrun.github.io/yeet-vm-images/apt}"
 yeet_vm_kernel_apt_keyring_url="${YEET_VM_KERNEL_APT_KEYRING_URL:-${yeet_vm_kernel_apt_uri}/yeet-vm-kernel-archive-keyring.gpg}"
-
-image_revision_from_version() {
-	local version="$1"
-	local revision=""
-
-	case "$version" in
-	*-v[0-9]*)
-		revision="${version##*-v}"
-		case "$revision" in
-		"" | *[!0-9]*)
-			return 1
-			;;
-		*)
-			printf '%s\n' "$revision"
-			;;
-		esac
-		;;
-	*-v*)
-		return 1
-		;;
-	esac
-}
-
-validate_image_revision() {
-	local version="$1"
-	local revision="$2"
-	local suffix_revision=""
-
-	if ! suffix_revision="$(image_revision_from_version "$version")"; then
-		echo "YEET_VM_IMAGE_VERSION has invalid image revision suffix: $version" >&2
-		return 1
-	fi
-	if [ -n "$revision" ] && ! [[ "$revision" =~ ^[0-9]+$ ]]; then
-		echo "YEET_VM_IMAGE_REVISION must be numeric when set: $revision" >&2
-		return 1
-	fi
-	if [ -n "$revision" ] && [ -n "$suffix_revision" ] && [ "$revision" != "$suffix_revision" ]; then
-		echo "YEET_VM_IMAGE_REVISION $revision does not match version suffix v$suffix_revision in $version" >&2
-		return 1
-	fi
-	if [ -n "$revision" ]; then
-		printf '%s\n' "$revision"
-	elif [ -n "$suffix_revision" ]; then
-		printf '%s\n' "$suffix_revision"
-	else
-		printf '%s\n' "0"
-	fi
-}
-
-manifest_optional_string_line() {
-	local field="$1"
-	local value="$2"
-
-	if [ -n "$value" ]; then
-		printf '  "%s": "%s",' "$field" "$value"
-	fi
-}
-
-manifest_optional_provenance_string_line() {
-	local field="$1"
-	local value="$2"
-
-	if [ -n "$value" ]; then
-		printf '    "%s": "%s",' "$field" "$value"
-	fi
-}
-
-if ! image_revision="$(validate_image_revision "$version" "$image_revision")"; then
-	exit 1
-fi
-
-if [ -n "$yeet_source_rev" ] && ! [[ "$yeet_source_rev" =~ ^[0-9a-f]{40}$ ]]; then
-	echo "YEET_SOURCE_REV must be a 40-character git revision when set: $yeet_source_rev" >&2
-	exit 1
-fi
 
 require() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -120,56 +39,65 @@ require() {
 	fi
 }
 
-for cmd in awk basename cat chmod cmp cp curl date debugfs dirname file find grep install mkdir mktemp rm sha256sum stat tar zstd; do
+for cmd in awk cat chmod cmp cp curl date debugfs dirname find grep install jq mkdir mktemp rm sha256sum stat tar zstd; do
 	require "$cmd"
 done
 
-case "$profile" in
-fast | stock)
-	;;
-*)
-	echo "unsupported YEET_VM_IMAGE_PROFILE=$profile (expected fast or stock)" >&2
+if [ "$profile" != "fast" ]; then
+	echo "unsupported YEET_VM_IMAGE_PROFILE=$profile (component guest bases require fast)" >&2
 	exit 1
-	;;
-esac
-
-if [ "$profile" = "fast" ]; then
-	for cmd in chroot dumpe2fs e2fsck id infocmp mount mountpoint tic tune2fs umount; do
-		require "$cmd"
-	done
-	if [ -z "$kernel_path" ]; then
-		echo "YEET_VM_KERNEL_PATH is required for the fast profile" >&2
-		echo "Set YEET_VM_IMAGE_PROFILE=stock to build the old Ubuntu-kernel/initrd image." >&2
+fi
+for cmd in chroot dumpe2fs e2fsck id infocmp mount mountpoint tic tune2fs umount; do
+	require "$cmd"
+done
+if ! [[ "$guest_base_id" =~ ^guest-ubuntu-26[.]04-amd64-v[1-9][0-9]*$ ]]; then
+	echo "YEET_VM_GUEST_BASE_ID must be guest-ubuntu-26.04-amd64-vN: $guest_base_id" >&2
+	exit 1
+fi
+if ! [[ "$kernel_release" =~ ^kernel-linux-([0-9]+[.][0-9]+([.][0-9]+)*)-yeet-v([1-9][0-9]*)$ ]]; then
+	echo "YEET_VM_KERNEL_RELEASE_ID must be an immutable kernel release: $kernel_release" >&2
+	exit 1
+fi
+kernel_upstream_version="${BASH_REMATCH[1]}"
+kernel_packaging_revision="${BASH_REMATCH[3]}"
+kernel_version="linux-${kernel_upstream_version}-yeet"
+if ! [[ "$kernel_manifest_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+	echo "YEET_VM_KERNEL_MANIFEST_SHA256 must be a lowercase SHA-256" >&2
+	exit 1
+fi
+for revision in "$yeet_source_rev" "$images_source_rev"; do
+	if ! [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+		echo "source revisions must be 40-character lowercase Git revisions" >&2
 		exit 1
 	fi
-	if [ ! -r "$kernel_path" ]; then
-		echo "YEET_VM_KERNEL_PATH is not readable: $kernel_path" >&2
-		exit 1
-	fi
-	if [ -z "$guest_init_path" ]; then
-		echo "YEET_VM_INIT_PATH is required for the fast profile" >&2
-		exit 1
-	fi
-	if [ ! -x "$guest_init_path" ]; then
-		echo "YEET_VM_INIT_PATH is not executable: $guest_init_path" >&2
-		exit 1
-	fi
-	if [ -z "$guest_agent_path" ]; then
-		echo "YEET_VM_AGENT_PATH is required for the fast profile" >&2
-		exit 1
-	fi
-	if [ ! -x "$guest_agent_path" ]; then
-		echo "YEET_VM_AGENT_PATH is not executable: $guest_agent_path" >&2
-		exit 1
-	fi
-	if [ ! -r "$ghostty_terminfo_source" ]; then
-		echo "YEET_VM_GHOSTTY_TERMINFO is not readable: $ghostty_terminfo_source" >&2
-		exit 1
-	fi
-	if [ "$(id -u)" != 0 ]; then
-		echo "the fast profile must run as root so it can mount and customize the rootfs" >&2
-		exit 1
-	fi
+done
+if ! [[ "$workflow_run_url" =~ ^https://github[.]com/yeetrun/yeet-vm-images/actions/runs/[1-9][0-9]*$ ]]; then
+	echo "YEET_VM_WORKFLOW_RUN_URL must identify a yeet-vm-images Actions run" >&2
+	exit 1
+fi
+if [ -z "$guest_init_path" ]; then
+	echo "YEET_VM_INIT_PATH is required for the fast profile" >&2
+	exit 1
+fi
+if [ ! -x "$guest_init_path" ]; then
+	echo "YEET_VM_INIT_PATH is not executable: $guest_init_path" >&2
+	exit 1
+fi
+if [ -z "$guest_agent_path" ]; then
+	echo "YEET_VM_AGENT_PATH is required for the fast profile" >&2
+	exit 1
+fi
+if [ ! -x "$guest_agent_path" ]; then
+	echo "YEET_VM_AGENT_PATH is not executable: $guest_agent_path" >&2
+	exit 1
+fi
+if [ ! -r "$ghostty_terminfo_source" ]; then
+	echo "YEET_VM_GHOSTTY_TERMINFO is not readable: $ghostty_terminfo_source" >&2
+	exit 1
+fi
+if [ "$(id -u)" != 0 ]; then
+	echo "the fast profile must run as root so it can mount and customize the rootfs" >&2
+	exit 1
 fi
 
 if [ -z "$work_dir" ]; then
@@ -204,6 +132,10 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$out_dir"
+if [ -n "$(find "$out_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+	echo "guest-base output directory must be empty: $out_dir" >&2
+	exit 1
+fi
 
 echo "Downloading Ubuntu cloud image..."
 curl -fL --retry 3 -o "$work_dir/$ubuntu_image" "$ubuntu_base_url/$ubuntu_image"
@@ -225,65 +157,6 @@ tar xzf "$work_dir/$ubuntu_image" -C "$work_dir"
 rootfs_source="$(find "$work_dir" -maxdepth 1 -name '*.img' -type f -print -quit)"
 if [ -z "$rootfs_source" ]; then
 	echo "Ubuntu cloud image tarball did not contain an .img file" >&2
-	exit 1
-fi
-
-ubuntu_kernel_version=""
-kernel_version=""
-kernel_source=""
-initrd_artifact=""
-
-detect_ubuntu_kernel_version() {
-	local source="$1"
-	if [ -n "${UBUNTU_KERNEL_VERSION:-}" ]; then
-		printf '%s\n' "$UBUNTU_KERNEL_VERSION"
-		return
-	fi
-	debugfs -R "ls -p /boot" "$source" 2>/dev/null |
-		awk -F/ '$6 ~ /^vmlinuz-[0-9].*-generic$/ { sub(/^vmlinuz-/, "", $6); print $6; exit }'
-}
-
-extract_ubuntu_kernel() {
-	ubuntu_kernel_version="$(detect_ubuntu_kernel_version "$rootfs_source")"
-	if [ -z "$ubuntu_kernel_version" ]; then
-		echo "could not detect Ubuntu kernel version in $rootfs_source" >&2
-		exit 1
-	fi
-	kernel_version="$ubuntu_kernel_version"
-	kernel_source="ubuntu-cloud-image"
-	initrd_artifact="initrd.img"
-
-	echo "Extracting Ubuntu kernel $ubuntu_kernel_version..."
-	debugfs -R "dump -p /boot/vmlinuz-$ubuntu_kernel_version $work_dir/vmlinuz-$ubuntu_kernel_version" "$rootfs_source" >/dev/null 2>&1
-	debugfs -R "dump -p /boot/initrd.img-$ubuntu_kernel_version $work_dir/initrd.img" "$rootfs_source" >/dev/null 2>&1
-	curl -fsSL --retry 3 -o "$work_dir/extract-vmlinux" "$extract_vmlinux_url"
-	chmod +x "$work_dir/extract-vmlinux"
-	"$work_dir/extract-vmlinux" "$work_dir/vmlinuz-$ubuntu_kernel_version" >"$work_dir/vmlinux"
-}
-
-install_provided_kernel() {
-	kernel_source="yeet-managed"
-	kernel_version="$kernel_version_override"
-	if [ -z "$kernel_version" ]; then
-		kernel_version="$(basename "$kernel_path")"
-	fi
-
-	echo "Installing yeet-managed kernel $kernel_version..."
-	install -m 0644 "$kernel_path" "$work_dir/vmlinux"
-}
-
-case "$profile" in
-fast)
-	install_provided_kernel
-	;;
-stock)
-	extract_ubuntu_kernel
-	;;
-esac
-
-if ! file "$work_dir/vmlinux" | grep -q "ELF 64-bit"; then
-	echo "extracted vmlinux is not an x86_64 ELF kernel" >&2
-	file "$work_dir/vmlinux" >&2
 	exit 1
 fi
 
@@ -313,20 +186,22 @@ Pin: version *
 Pin-Priority: -1
 EOF
 	cat >"$root/etc/needrestart/conf.d/99-yeet-vm-kernel.conf" <<'EOF'
-# Yeet VM images boot a host-side Firecracker kernel from the image bundle, not
-# a guest-managed Ubuntu linux-image package. Keep needrestart service checks,
-# but skip kernel package hints that cannot apply in this guest.
+# Yeet VMs boot a host-managed kernel selected through data-only guest metadata,
+# not a guest-managed Ubuntu linux-image package. Keep needrestart service
+# checks, but skip kernel package hints that cannot apply in this guest.
 $nrconf{kernelhints} = 0;
 EOF
 	cat >"$root/usr/share/doc/yeet-vm-image/kernel.md" <<'EOF'
 # Yeet VM Kernel
 
-This image boots with Firecracker direct kernel boot. The kernel is supplied by
-the yeet VM image bundle manifest, not by packages installed inside the guest.
+This guest base boots with a host-managed Firecracker kernel. The
+`yeet-vm-kernel` package writes a data-only request identifying an immutable
+kernel release and manifest digest; the untrusted guest never supplies the host
+artifact itself.
 
 Guest apt upgrades intentionally do not install Ubuntu kernel, bootloader, or
-initramfs packages. To update the boot kernel, publish a new yeet VM image
-bundle and create VMs from that image version.
+initramfs packages. Reboot after a `yeet-vm-kernel` package update so Catch can
+validate the request against its trusted kernel catalog and apply it.
 
 The fast yeet VM image profile intentionally does not support loadable kernel
 modules or snap packages. Router-oriented kernel features such as TUN,
@@ -444,8 +319,7 @@ validate_fast_rootfs_ubuntu_compatibility() {
 	fi
 
 	local expected_kernel_package_version
-	expected_kernel_package_version="${kernel_version#linux-}"
-	expected_kernel_package_version="${expected_kernel_package_version%-yeet}"
+	expected_kernel_package_version="${kernel_upstream_version}-${kernel_packaging_revision}"
 	local installed_kernel_package_version
 	installed_kernel_package_version="$(chroot "$root" /usr/bin/dpkg-query -W -f='${Version}' yeet-vm-kernel 2>/dev/null || true)"
 	if [ "$installed_kernel_package_version" != "$expected_kernel_package_version" ]; then
@@ -456,10 +330,22 @@ validate_fast_rootfs_ubuntu_compatibility() {
 		echo "missing yeet VM selected kernel metadata" >&2
 		exit 1
 	fi
-	if ! grep -Fq '"version": "'"$kernel_version"'"' "$root/etc/yeet-vm/kernel/selected.json"; then
-		echo "selected kernel metadata must reference $kernel_version" >&2
+	jq -e \
+		--arg version "$kernel_version" \
+		--arg release "$kernel_release" \
+		--arg manifest "$kernel_manifest_sha256" '
+		.schema_version == 2 and
+		.version == $version and
+		.release_id == $release and
+		.manifest_sha256 == $manifest and
+		.kernel == ("/usr/lib/yeet-vm/kernels/" + $version + "/vmlinux") and
+		.kernel_config == ("/usr/lib/yeet-vm/kernels/" + $version + "/kernel.config") and
+		(.sha256.vmlinux | test("^[0-9a-f]{64}$")) and
+		(.sha256["kernel.config"] | test("^[0-9a-f]{64}$"))
+	' "$root/etc/yeet-vm/kernel/selected.json" >/dev/null || {
+		echo "selected kernel metadata does not match the requested immutable kernel" >&2
 		exit 1
-	fi
+	}
 }
 
 run_fast_rootfs_e2fsck() {
@@ -630,137 +516,77 @@ EOF
 	rootfs_mount=""
 }
 
-echo "Downloading Firecracker $firecracker_version..."
-curl -fL --retry 3 -o "$work_dir/$firecracker_tgz" "$firecracker_url"
-tar xzf "$work_dir/$firecracker_tgz" -C "$work_dir"
-fc_dir="$work_dir/release-${firecracker_version}-${firecracker_arch}"
-(
-	cd "$fc_dir"
-	sha256sum -c --ignore-missing SHA256SUMS
-)
-
 install -m 0644 "$rootfs_source" "$out_dir/rootfs.ext4"
-install -m 0644 "$work_dir/vmlinux" "$out_dir/vmlinux"
-if [ "$profile" = "fast" ] && [ -r "$(dirname "$kernel_path")/kernel.config" ]; then
-	install -m 0644 "$(dirname "$kernel_path")/kernel.config" "$out_dir/kernel.config"
-fi
-if [ -n "$initrd_artifact" ]; then
-	install -m 0644 "$work_dir/initrd.img" "$out_dir/initrd.img"
-fi
-install -m 0755 "$fc_dir/firecracker-${firecracker_version}-${firecracker_arch}" "$out_dir/firecracker"
-install -m 0755 "$fc_dir/jailer-${firecracker_version}-${firecracker_arch}" "$out_dir/jailer"
-
-if [ "$profile" = "fast" ]; then
-	customize_fast_rootfs "$out_dir/rootfs.ext4"
-	normalize_fast_rootfs_ext4_features "$out_dir/rootfs.ext4"
-fi
+customize_fast_rootfs "$out_dir/rootfs.ext4"
+normalize_fast_rootfs_ext4_features "$out_dir/rootfs.ext4"
 
 echo "Compressing rootfs..."
+rootfs_size="$(stat -c %s "$out_dir/rootfs.ext4")"
+customized_rootfs_sha="$(sha256sum "$out_dir/rootfs.ext4" | awk '{ print $1 }')"
 zstd -T0 "-$zstd_level" -f --no-progress -o "$out_dir/rootfs.ext4.zst" "$out_dir/rootfs.ext4"
 
-rootfs_size="$(stat -c %s "$out_dir/rootfs.ext4")"
-rootfs_sha="$(sha256sum "$out_dir/rootfs.ext4.zst" | awk '{ print $1 }')"
-kernel_sha="$(sha256sum "$out_dir/vmlinux" | awk '{ print $1 }')"
-firecracker_sha="$(sha256sum "$out_dir/firecracker" | awk '{ print $1 }')"
-jailer_sha="$(sha256sum "$out_dir/jailer" | awk '{ print $1 }')"
-source_image_sha="$(sha256sum "$out_dir/rootfs.ext4" | awk '{ print $1 }')"
 build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-snap_support=false
-kernel_policy="yeet-managed"
-guest_init="/usr/local/lib/yeet-vm/yeet-init"
-guest_agent="/usr/local/lib/yeet-vm/yeet-agent"
-guest_init_sha=""
-guest_agent_sha=""
-if [ "$profile" = "fast" ]; then
-	guest_init_sha="$(sha256sum "$guest_init_path" | awk '{ print $1 }')"
-	guest_agent_sha="$(sha256sum "$guest_agent_path" | awk '{ print $1 }')"
-fi
-if [ "$profile" = "stock" ]; then
-	snap_support=true
-	kernel_policy="ubuntu-kernel-with-initrd"
-	guest_init=""
-	guest_agent=""
-fi
-initrd_manifest_line=""
-initrd_checksum_line=""
-if [ -n "$initrd_artifact" ]; then
-	initrd_sha="$(sha256sum "$out_dir/initrd.img" | awk '{ print $1 }')"
-	initrd_manifest_line='  "initrd": "initrd.img",'
-	initrd_checksum_line='    "initrd.img": "'"$initrd_sha"'",'
-fi
-kernel_config_checksum_line=""
-if [ -f "$out_dir/kernel.config" ]; then
-	kernel_config_sha="$(sha256sum "$out_dir/kernel.config" | awk '{ print $1 }')"
-	kernel_config_checksum_line='    "kernel.config": "'"$kernel_config_sha"'",'
-fi
-upstream_kernel_version_manifest_line="$(manifest_optional_string_line "upstream_kernel_version" "$upstream_kernel_version")"
-kernel_source_url_manifest_line="$(manifest_optional_string_line "kernel_source_url" "$kernel_source_url")"
-kernel_source_sha256_manifest_line="$(manifest_optional_string_line "kernel_source_sha256" "$kernel_source_sha256")"
-yeet_source_rev_manifest_line="$(manifest_optional_provenance_string_line "yeet_rev" "$yeet_source_rev")"
+guest_init_sha="$(sha256sum "$guest_init_path" | awk '{ print $1 }')"
+guest_agent_sha="$(sha256sum "$guest_agent_path" | awk '{ print $1 }')"
 
-cat >"$out_dir/manifest.json" <<JSON
-{
-  "name": "yeet-ubuntu-26.04",
-  "version": "$version",
-  "image_revision": ${image_revision:-0},
-  "architecture": "x86_64",
-  "image_profile": "$profile",
-  "kernel_policy": "$kernel_policy",
-  "snap_support": $snap_support,
-  "guest_init": "$guest_init",
-  "guest_init_sha256": "$guest_init_sha",
-  "guest_agent": "$guest_agent",
-  "guest_agent_sha256": "$guest_agent_sha",
-  "kernel": "vmlinux",
-$initrd_manifest_line
-  "rootfs": "rootfs.ext4.zst",
-  "firecracker": "firecracker",
-  "jailer": "jailer",
-  "rootfs_size": $rootfs_size,
-  "kernel_version": "$kernel_version",
-$upstream_kernel_version_manifest_line
-$kernel_source_url_manifest_line
-$kernel_source_sha256_manifest_line
-  "ubuntu_kernel_version": "$ubuntu_kernel_version",
-  "provenance": {
-    "build_time": "$build_time",
-${yeet_source_rev_manifest_line}
-    "ubuntu_cloud_image_url": "$ubuntu_base_url/$ubuntu_image",
-    "ubuntu_cloud_image_sha256": "$actual_image_sha",
-    "ubuntu_cloud_sha256sums_url": "$ubuntu_base_url/SHA256SUMS",
-    "ubuntu_rootfs_sha256": "$source_image_sha",
-    "kernel_source": "$kernel_source",
-    "extract_vmlinux_url": "$extract_vmlinux_url",
-    "firecracker_version": "$firecracker_version",
-    "firecracker_url": "$firecracker_url"
-  },
-  "checksums": {
-    "vmlinux": "$kernel_sha",
-$initrd_checksum_line
-$kernel_config_checksum_line
-    "rootfs.ext4.zst": "$rootfs_sha",
-    "firecracker": "$firecracker_sha",
-    "jailer": "$jailer_sha"
-  }
-}
-JSON
+"$repo_root/scripts/render-guest-manifest.sh" \
+	--guest-base-id "$guest_base_id" \
+	--os ubuntu \
+	--os-version 26.04 \
+	--architecture amd64 \
+	--rootfs "$out_dir/rootfs.ext4.zst" \
+	--uncompressed-bytes "$rootfs_size" \
+	--default-kernel-channel stable \
+	--source-commit "$images_source_rev" \
+	--workflow-run-url "$workflow_run_url" \
+	--out "$out_dir/guest-manifest.json"
+
+jq -n \
+	--arg guest_base_id "$guest_base_id" \
+	--arg build_time "$build_time" \
+	--arg images_source_rev "$images_source_rev" \
+	--arg workflow_run_url "$workflow_run_url" \
+	--arg yeet_source_rev "$yeet_source_rev" \
+	--arg ubuntu_cloud_image_url "$ubuntu_base_url/$ubuntu_image" \
+	--arg ubuntu_cloud_image_sha256 "$actual_image_sha" \
+	--arg ubuntu_cloud_sha256sums_url "$ubuntu_base_url/SHA256SUMS" \
+	--arg customized_rootfs_sha256 "$customized_rootfs_sha" \
+	--arg guest_init_sha256 "$guest_init_sha" \
+	--arg guest_agent_sha256 "$guest_agent_sha" \
+	--arg kernel_release "$kernel_release" \
+	--arg kernel_manifest_sha256 "$kernel_manifest_sha256" '
+	{
+		schema_version: 1,
+		guest_base_id: $guest_base_id,
+		build_time: $build_time,
+		source: {
+			images_commit: $images_source_rev,
+			workflow_run_url: $workflow_run_url,
+			yeet_commit: $yeet_source_rev,
+			ubuntu_cloud_image_url: $ubuntu_cloud_image_url,
+			ubuntu_cloud_image_sha256: $ubuntu_cloud_image_sha256,
+			ubuntu_cloud_sha256sums_url: $ubuntu_cloud_sha256sums_url,
+			customized_rootfs_sha256: $customized_rootfs_sha256
+		},
+		guest: {
+			init_path: "/usr/local/lib/yeet-vm/yeet-init",
+			init_sha256: $guest_init_sha256,
+			agent_path: "/usr/local/lib/yeet-vm/yeet-agent",
+			agent_sha256: $guest_agent_sha256
+		},
+		kernel_request: {
+			release_id: $kernel_release,
+			manifest_sha256: $kernel_manifest_sha256
+		}
+	}' >"$out_dir/provenance.json"
 
 (
 	cd "$out_dir"
-	checksum_files=(manifest.json vmlinux)
-	if [ -n "$initrd_artifact" ]; then
-		checksum_files+=(initrd.img)
-	fi
-	checksum_files+=(rootfs.ext4.zst firecracker jailer)
-	if [ -f kernel.config ]; then
-		checksum_files+=(kernel.config)
-	fi
-	sha256sum "${checksum_files[@]}" >checksums.txt
+	sha256sum rootfs.ext4.zst guest-manifest.json provenance.json >checksums.txt
 )
 
 rm -f "$out_dir/rootfs.ext4"
 
-echo "Wrote VM image bundle to $out_dir"
-echo "Version: $version"
-echo "Profile: $profile"
-echo "Kernel: $kernel_version"
+echo "Wrote Ubuntu guest base to $out_dir"
+echo "Guest base: $guest_base_id"
+echo "Default kernel request: $kernel_release"

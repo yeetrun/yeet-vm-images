@@ -12,13 +12,17 @@ trap cleanup EXIT
 bin_dir="$tmp_dir/bin"
 out_dir="$tmp_dir/out"
 kernel_out_dir="$tmp_dir/kernel-out"
-mkdir -p "$bin_dir" "$out_dir" "$kernel_out_dir"
+guest_out_dir="$tmp_dir/guest-out"
+mkdir -p "$bin_dir" "$out_dir" "$kernel_out_dir" "$guest_out_dir"
 
 for asset in manifest.json vmlinux rootfs.ext4.zst firecracker jailer kernel.config checksums.txt; do
 	printf '%s\n' "$asset payload" >"$out_dir/$asset"
 done
 for asset in vmlinux kernel.config kernel-manifest.json kernel-checksums.txt; do
 	printf '%s\n' "$asset payload" >"$kernel_out_dir/$asset"
+done
+for asset in rootfs.ext4.zst guest-manifest.json checksums.txt provenance.json; do
+	printf '%s\n' "$asset payload" >"$guest_out_dir/$asset"
 done
 printf 'release notes\n' >"$out_dir/release-notes.md"
 
@@ -156,6 +160,22 @@ upload kernel-linux-7.1.1-yeet-v1 kernel.config
 upload kernel-linux-7.1.1-yeet-v1 kernel-manifest.json
 upload kernel-linux-7.1.1-yeet-v1 kernel-checksums.txt
 edit kernel-linux-7.1.1-yeet-v1 --draft=false"
+
+YEET_FAKE_GH_LOG="$tmp_dir/guest-success.log"
+export YEET_FAKE_GH_LOG
+PATH="$bin_dir:$PATH" "$repo_root/scripts/publish-guest-base-assets.sh" \
+	guest-ubuntu-26.04-amd64-v1 \
+	guest-ubuntu-26.04-amd64-v1 \
+	abc123 \
+	"$out_dir/release-notes.md" \
+	"$guest_out_dir"
+
+assert_log "create guest-ubuntu-26.04-amd64-v1 --draft --target abc123 --title guest-ubuntu-26.04-amd64-v1 --notes-file $out_dir/release-notes.md
+upload guest-ubuntu-26.04-amd64-v1 rootfs.ext4.zst
+upload guest-ubuntu-26.04-amd64-v1 guest-manifest.json
+upload guest-ubuntu-26.04-amd64-v1 checksums.txt
+upload guest-ubuntu-26.04-amd64-v1 provenance.json
+edit guest-ubuntu-26.04-amd64-v1 --draft=false"
 
 YEET_FAKE_GH_LOG="$tmp_dir/failure.log"
 YEET_FAKE_GH_FAIL_UPLOAD="rootfs.ext4.zst"

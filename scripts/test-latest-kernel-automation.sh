@@ -30,7 +30,7 @@ assert_builder_omits_unconditional_optional_manifest_field() {
 	fi
 }
 
-for builder in "$repo_root/scripts/build-ubuntu-26.04.sh" "$repo_root/scripts/build-nixos-26.05.sh"; do
+for builder in "$repo_root/scripts/build-nixos-26.05.sh"; do
 	for field in upstream_kernel_version kernel_source_url kernel_source_sha256 image_revision; do
 		assert_builder_manifest_field "$builder" "$field"
 	done
@@ -38,15 +38,6 @@ for builder in "$repo_root/scripts/build-ubuntu-26.04.sh" "$repo_root/scripts/bu
 		assert_builder_omits_unconditional_optional_manifest_field "$builder" "$field"
 	done
 done
-assert_builder_manifest_field "$repo_root/scripts/build-ubuntu-26.04.sh" "yeet_rev"
-grep -Fq 'YEET_SOURCE_REV' "$repo_root/scripts/build-ubuntu-26.04.sh"
-grep -Fq "YEET_SOURCE_REV=\$(git rev-parse HEAD)" "$repo_root/.github/workflows/build-ubuntu-26.04.yml"
-grep -Fq ".provenance.yeet_rev == env.YEET_SOURCE_REV" "$repo_root/.github/workflows/build-ubuntu-26.04.yml"
-grep -Fq 'kernel_config_checksum_line' "$repo_root/scripts/build-ubuntu-26.04.sh"
-grep -Fq 'kernel_config_sha="$(sha256sum "$out_dir/kernel.config"' "$repo_root/scripts/build-ubuntu-26.04.sh"
-grep -Fq 'kernel_config_checksum_line=' "$repo_root/scripts/build-ubuntu-26.04.sh"
-grep -Fq '"kernel.config"' "$repo_root/scripts/build-ubuntu-26.04.sh"
-grep -Fq "check_manifest_checksum kernel.config" "$repo_root/.github/workflows/build-ubuntu-26.04.yml"
 
 expected_manifest_version_pattern='(v[0-9]+|kernel-[0-9]+[.][0-9]+([.][0-9]+)?-v[0-9]+)'
 manifest_version_pattern="$(sed -n "s/^manifest_version_pattern='\(.*\)'$/\1/p" "$repo_root/scripts/verify-catalog.sh")"
@@ -223,7 +214,6 @@ assert_builder_helper_behavior() {
 	assert_optional_manifest_line_returns "$builder" "kernel_source_sha256" "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" '  "kernel_source_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",'
 }
 
-assert_builder_helper_behavior "$repo_root/scripts/build-ubuntu-26.04.sh" "ubuntu-26.04-amd64"
 assert_builder_helper_behavior "$repo_root/scripts/build-nixos-26.05.sh" "nixos-26.05-amd64"
 
 cat >"$tmp_dir/curl" <<'MOCK_CURL'

@@ -16,7 +16,6 @@ assert_contains() {
 }
 
 for builder in \
-	scripts/build-ubuntu-26.04.sh \
 	scripts/build-nixos-26.05.sh
 do
 	assert_contains "$builder" "firecracker_version=\"\${FIRECRACKER_VERSION:-$expected_firecracker_version}\""
@@ -28,7 +27,6 @@ do
 done
 
 for workflow in \
-	.github/workflows/build-ubuntu-26.04.yml \
 	.github/workflows/build-nixos-26.05.yml
 do
 	default_count="$(grep -Fc -- "default: $expected_firecracker_version" "$repo_root/$workflow")"

@@ -15,7 +15,7 @@ Official payload families:
 - `vm://ubuntu/26.04`
 - `vm://nixos/26.05`
 
-Each published bundle includes:
+Existing immutable monolithic bundles include:
 
 - `manifest.json`
 - `vmlinux`
@@ -36,6 +36,12 @@ The stable latest manifest URLs are the catch-facing entry points:
 URLs. Publishing a new image version updates the immutable release and the
 matching `*-latest` release. The catalog only changes when a family is added,
 renamed, or intentionally redirected.
+
+New component publication is additive. `guest-catalog.json`,
+`kernel-catalog.json`, and `runtime-catalog.json` own independent immutable
+guest root filesystems, boot kernels, and host Firecracker+jailer runtimes.
+Existing bundle releases and aliases remain available for old Catch clients and
+already provisioned VMs.
 
 ## How Yeet Uses These Images
 
@@ -107,15 +113,16 @@ contains:
 - `kernel-manifest.json`
 - `kernel-checksums.txt`
 
-Image workflows consume those canonical assets. Image bundles still include
-`vmlinux`, `kernel.config`, and checksums so each bundle remains
-self-contained for catch.
+New component guest bases do not copy these assets. They carry a data-only
+kernel selector in the root filesystem; Catch treats that request as untrusted
+and resolves the exact kernel ID and manifest digest through its verified
+kernel catalog. Existing monolithic bundles remain self-contained.
 
-The `Sync latest stable Linux kernel VM images` workflow runs daily and can be
-manually dispatched. It checks kernel.org latest stable metadata, compares the
-Ubuntu and NixOS latest manifests, resolves or publishes the needed canonical
-kernel release, publishes package metadata from that same release, then builds
-only stale image families.
+The `Sync latest stable Linux kernel component` workflow runs daily and can be
+manually dispatched. It checks kernel.org stable metadata, publishes only the
+canonical kernel and matching Debian/Nix selector packages, verifies the
+published bytes, and opens a reviewed `kernel-catalog.json` stable-promotion
+PR. A kernel release never rebuilds or moves a guest-base release.
 
 Image versions use hybrid tags such as
 `ubuntu-26.04-amd64-kernel-<kernel>-v<N>`. The kernel segment records the
@@ -128,18 +135,19 @@ distro-native package metadata:
   `https://yeetrun.github.io/yeet-vm-images/apt`
 - NixOS flake metadata under `kernel-packages/metadata.nix`
 
-Ubuntu images include the yeet apt source and install `yeet-vm-kernel` by
+Ubuntu guest bases include the yeet apt source and install `yeet-vm-kernel` by
 default. NixOS images include and enable the yeet kernel package flake by
-default. Image bundles, apt metadata, and Nix metadata all track the same
-canonical kernel assets.
+default. Selector schema 2 binds the immutable kernel release ID and manifest
+digest while retaining the guest paths and payload hashes.
 
 ## Image Families
 
 ### Ubuntu 26.04
 
-The Ubuntu image starts from the official Ubuntu 26.04 cloud image and applies
-the yeet fast profile. It boots a yeet-managed Firecracker kernel, uses
-`yeet-init` before systemd, enables `yeet-agent`, and omits `initrd.img`.
+The Ubuntu guest base starts from the official Ubuntu 26.04 cloud image and
+applies the yeet fast profile. It uses `yeet-init` before systemd, enables
+`yeet-agent`, installs a data-only kernel selector, and contains no host
+Firecracker, jailer, `vmlinux`, kernel config, or initrd artifact.
 
 The fast profile keeps Ubuntu package behavior intact while removing packages
 and services that do not contribute to yeet VM startup. It also installs the
@@ -165,15 +173,18 @@ Publishing is workflow-driven:
 
 - `build-kernel.yml` builds and publishes canonical kernel assets.
 - `publish-kernel-packages.yml` publishes the apt and Nix package sources.
-- `build-ubuntu-26.04.yml` publishes Ubuntu image bundles.
+- `build-ubuntu-26.04.yml` manually publishes immutable Ubuntu guest bases and
+  opens candidate-only catalog PRs.
 - `build-nixos-26.05.yml` publishes NixOS image bundles.
-- `sync-latest-stable-kernel.yml` checks for newer stable kernels and rebuilds
-  stale image families.
+- `sync-latest-stable-kernel.yml` checks for newer stable kernels and opens
+  reviewed kernel catalog promotions without rebuilding guest bases.
 
-The image workflows check out `yeetrun/yeet` at `yeet_ref`, build the guest
-tools, consume a canonical kernel release or build a fallback kernel, build the
-rootfs, verify the bundle, publish an immutable release, and optionally update
-the latest alias used by catch.
+The Ubuntu guest-base workflow checks out `yeetrun/yeet` at `yeet_ref`, builds
+the guest tools, verifies an exact stable kernel selector package, builds and
+re-downloads the rootfs-only release, then opens a candidate catalog PR.
+Component tags use `guest-ubuntu-26.04-amd64-v<N>`. Stable movement is a
+separate reviewed change after Catch provisioning validation; the workflow
+does not edit legacy image aliases.
 
 ### Firecracker Runtime Candidates
 

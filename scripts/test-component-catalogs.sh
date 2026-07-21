@@ -25,9 +25,14 @@ kernel_catalog_schema="$repo_root/schemas/kernel-catalog.schema.json"
 guest_manifest="$repo_root/scripts/testdata/guest-manifest-valid.json"
 kernel_manifest="$repo_root/scripts/testdata/kernel-manifest-valid.json"
 verifier="$repo_root/scripts/verify-component-catalogs.sh"
+guest_renderer="$repo_root/scripts/render-guest-manifest.sh"
+guest_updater="$repo_root/scripts/update-guest-catalog.sh"
 
-for path in "$guest_schema" "$guest_catalog_schema" "$kernel_schema" "$kernel_catalog_schema" "$guest_manifest" "$kernel_manifest" "$verifier"; do
+for path in "$guest_schema" "$guest_catalog_schema" "$kernel_schema" "$kernel_catalog_schema" "$guest_manifest" "$kernel_manifest" "$verifier" "$guest_renderer" "$guest_updater"; do
 	[ -e "$path" ] || fail "missing contract artifact $path"
+done
+for helper in "$guest_renderer" "$guest_updater"; do
+	[ -x "$helper" ] || fail "component helper is not executable: $helper"
 done
 
 "$schema_validator" --check-metaschema "$guest_schema" "$guest_catalog_schema" "$kernel_schema" "$kernel_catalog_schema" >/dev/null
