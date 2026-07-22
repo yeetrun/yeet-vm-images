@@ -1,10 +1,22 @@
 {
   "schema_version": 1,
-  "guest_bases": [],
+  "guest_bases": [
+    {
+      "guest_base_id": "guest-nixos-26.05-amd64-v2",
+      "os": "nixos",
+      "os_version": "26.05",
+      "architecture": "amd64",
+      "manifest_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/guest-nixos-26.05-amd64-v2/guest-manifest.json",
+      "manifest_sha256": "d57385a9dee6d73c5fb515dd77b228cfff969b3995058d736a538248935576ce"
+    }
+  ],
   "channels": {
     "nixos-26.05-amd64": {
       "stable": null,
-      "candidate": null
+      "candidate": {
+        "guest_base_id": "guest-nixos-26.05-amd64-v2",
+        "manifest_sha256": "d57385a9dee6d73c5fb515dd77b228cfff969b3995058d736a538248935576ce"
+      }
     },
     "ubuntu-26.04-amd64": {
       "stable": null,
