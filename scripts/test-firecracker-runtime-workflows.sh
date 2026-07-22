@@ -137,6 +137,7 @@ require_text "$integration" 'sudo apt-get install -y curl gh git jq pipx python3
 require_text "$integration" 'pipx install check-jsonschema==0.37.4' "integration schema validator is not pinned by the workflow"
 require_text "$integration" 'uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16' "integration Go toolchain action is missing or not pinned"
 require_text "$integration" 'go-version-file: yeet-src/go.mod' "integration Go version is not bound to the exact Yeet commit"
+require_text "$integration" '--work-dir "/var/tmp/yeet-firecracker-runtime-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"' "integration VM state is not rooted below a root-owned host directory"
 require_text "$integration" '    environment: firecracker-runtime-integration-publish' "integration publishing environment is missing"
 require_text "$integration" '      group: firecracker-runtime-integration-publish' "integration publishing concurrency is missing"
 require_text "$integration" '      cancel-in-progress: false' "integration publication cancellation differs"

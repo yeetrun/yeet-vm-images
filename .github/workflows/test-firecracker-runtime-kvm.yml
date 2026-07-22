@@ -237,7 +237,7 @@ jobs:
             --current-kernel-release "$CURRENT_KERNEL_RELEASE" \
             --previous-kernel-release "$PREVIOUS_KERNEL_RELEASE" \
             --yeet-ref "$YEET_COMMIT" \
-            --work-dir "$RUNNER_TEMP/firecracker-runtime-$GITHUB_RUN_ID" \
+            --work-dir "/var/tmp/yeet-firecracker-runtime-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
             --matrix-out "$RUNNER_TEMP/runtime-matrix.json"
 
       - name: Write exact integration evidence
