@@ -11,12 +11,15 @@
           "support": "supported",
           "integration_attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.16.1-yeet-v1-integration-29893453843/runtime-attestation.json",
           "integration_attestation_sha256": "33142ed5687c1297aaff712fcb3b81529682ee9aa1ae39d196dbf60aa2989e5a",
-          "canary_attestation_url": null,
-          "canary_attestation_sha256": null
+          "canary_attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.16.1-yeet-v1-canary-29893998019/runtime-attestation.json",
+          "canary_attestation_sha256": "6388358a8ef1630326c38b333d64e5a08e5a17c10ed95df2267f30038fe7e312"
         }
       ],
       "channels": {
-        "stable": null,
+        "stable": {
+          "runtime_id": "firecracker-v1.16.1-yeet-v1",
+          "manifest_sha256": "29d83ce729b5b047bb68e56f087a934693e9d945965310ab0ef3948330650457"
+        },
         "candidate": {
           "runtime_id": "firecracker-v1.16.1-yeet-v1",
           "manifest_sha256": "29d83ce729b5b047bb68e56f087a934693e9d945965310ab0ef3948330650457"
