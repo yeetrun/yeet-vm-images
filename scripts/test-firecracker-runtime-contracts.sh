@@ -13,6 +13,7 @@ runtime_catalog_verifier="$repo_root/scripts/verify-runtime-catalog.sh"
 runtime_manifest="$repo_root/scripts/testdata/runtime-manifest-v1.16.1.json"
 runtime_catalog_fixture="$repo_root/scripts/testdata/runtime-catalog-empty.json"
 runtime_attestation="$repo_root/scripts/testdata/runtime-attestation-integration.json"
+runtime_canary_attestation="$repo_root/scripts/testdata/runtime-attestation-canary.json"
 manifest_schema="$repo_root/schemas/firecracker-runtime-manifest.schema.json"
 catalog_schema="$repo_root/schemas/firecracker-runtime-catalog.schema.json"
 attestation_schema="$repo_root/schemas/firecracker-runtime-attestation.schema.json"
@@ -25,7 +26,8 @@ for artifact in \
 	"$runtime_catalog_verifier" \
 	"$runtime_manifest" \
 	"$runtime_catalog_fixture" \
-	"$runtime_attestation"; do
+	"$runtime_attestation" \
+	"$runtime_canary_attestation"; do
 	if [ ! -e "$artifact" ]; then
 		echo "missing required runtime contract artifact: $artifact" >&2
 		exit 1
@@ -187,6 +189,7 @@ schema_validate "$catalog_schema" "$repo_root/runtime-catalog.json"
 "$runtime_catalog_verifier" "$repo_root/runtime-catalog.json"
 schema_validate "$manifest_schema" "$runtime_manifest"
 schema_validate "$attestation_schema" "$runtime_attestation"
+schema_validate "$attestation_schema" "$runtime_canary_attestation"
 jq -e "$manifest_filter" "$runtime_manifest" >/dev/null
 jq -e "$attestation_filter" "$runtime_attestation" >/dev/null
 
@@ -194,6 +197,8 @@ jq -e '.schema_version == 1 and .runtime_id == "firecracker-v1.16.1-yeet-v1"' \
 	"$runtime_manifest" >/dev/null
 jq -e '.schema_version == 1 and .kind == "integration" and (.subject.manifest_sha256 | test("^[0-9a-f]{64}$"))' \
 	"$runtime_attestation" >/dev/null
+jq -e '.schema_version == 1 and .kind == "canary" and .canary.boot_cycles >= 25 and .canary.natural_reboots >= 10 and .canary.disk_restore_cycles >= 5' \
+	"$runtime_canary_attestation" >/dev/null
 
 jq -e '
   ."$schema" == "https://json-schema.org/draft/2020-12/schema" and
@@ -221,13 +226,14 @@ jq -e '
   ."$schema" == "https://json-schema.org/draft/2020-12/schema" and
   .additionalProperties == false and
   .properties.schema_version.const == 1 and
-  .properties.kind.const == "integration" and
+  .properties.kind.enum == ["integration", "canary"] and
   .properties.subject.additionalProperties == false and
   .properties.runner.additionalProperties == false and
   .properties.source.additionalProperties == false and
   .properties.tested_yeet.additionalProperties == false and
   .properties.artifacts.additionalProperties == false and
-  .properties.matrix.additionalProperties == false
+  .properties.matrix.additionalProperties == false and
+  .properties.canary.additionalProperties == false
 ' "$attestation_schema" >/dev/null
 
 runtime_a='{
