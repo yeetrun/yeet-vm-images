@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "component": {
+    "kind": "kernel",
+    "id": "kernel-linux-7.1.4-yeet-v4",
+    "manifest_sha256": "05c70cc78db192ab8e1b88a2dd1a4b3e1401a243f5b05bf75708b2ed2cb44a9b",
+    "vmlinux_sha256": "a431c4150f39f7f4306e2a612f35b48c90c46f34e125b6c659e0a5c8b9356514"
+  },
+  "release": {
+    "source_commit": "5cac6ab8b77c9d21e804b44dac84ca4382692e57",
+    "workflow_run": "29885032593"
+  },
+  "validation": {
+    "yeet_commit": "02e32c2764d0d49f501a8e728cc25d30eb8394ce",
+    "catalog_commit": "af6eecb700d0f5a73a5a47a1df55836263535ecd",
+    "host_class": "linux-amd64-kvm-zfs",
+    "guest_profiles": [
+      "ubuntu-26.04-zfs-zvol",
+      "nixos-26.05-raw-file"
+    ],
+    "runtime_id": "firecracker-v1.16.1-yeet-v1",
+    "runtime_manifest_sha256": "29d83ce729b5b047bb68e56f087a934693e9d945965310ab0ef3948330650457",
+    "checks": {
+      "immutable_manifest_digest": "passed",
+      "booted_kernel_identity": "passed-7.1.4-yeet",
+      "manual_kernel_sync_restart": "passed-both-guests",
+      "catalog_verified_guest_request": "passed",
+      "guest_host_runtime_authority": "absent",
+      "natural_guest_reboot": "passed",
+      "current_kernel_matrix": "passed-by-canary",
+      "previous_kernel_matrix": "passed-by-canary",
+      "runtime_identity_unchanged": "passed"
+    }
+  },
+  "canary": {
+    "attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.16.1-yeet-v1-canary-29893998019/runtime-attestation.json",
+    "attestation_sha256": "6388358a8ef1630326c38b333d64e5a08e5a17c10ed95df2267f30038fe7e312",
+    "matrix_cycles": 5,
+    "boot_cycles": 180,
+    "natural_reboots": 35,
+    "disk_restore_cycles": 5
+  },
+  "started_at": "2026-07-22T05:31:52Z",
+  "completed_at": "2026-07-22T06:34:30Z",
+  "result": "passed"
+}
