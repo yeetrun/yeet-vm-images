@@ -162,7 +162,17 @@ MOCK_FILE
 chmod +x "$tmp_dir/bin/file"
 cat >"$tmp_dir/probe" <<'MOCK_PROBE'
 #!/usr/bin/env bash
-case "$(basename "$1")" in firecracker) echo 'Firecracker v1.16.1' ;; jailer) echo 'Jailer v1.16.1' ;; *) exit 1 ;; esac
+case "$(basename "$1")" in
+	firecracker)
+		echo 'Firecracker v1.16.1'
+		if [ "${YEET_TEST_PROBE_SCENARIO:-}" = official-output ]; then
+			echo
+			echo '2026-07-21T22:32:32.833298899 [anonymous-instance:main] Firecracker exiting successfully. exit_code=0'
+		fi
+		;;
+	jailer) echo 'Jailer v1.16.1' ;;
+	*) exit 1 ;;
+esac
 MOCK_PROBE
 chmod +x "$tmp_dir/probe"
 
@@ -259,6 +269,9 @@ done
 # I3/I4 build: reviewed policy, real ELF on Linux, trusted Actions provenance.
 valid_out="$tmp_dir/valid-out"
 YEET_TEST_FIXTURE="$fixture" "${base_env[@]}" "$builder" --upstream-version v1.16.1 --runtime-id firecracker-v1.16.1-yeet-v1 --out "$valid_out" --allow-unsigned-tag
+official_probe_out="$tmp_dir/official-probe-out"
+YEET_TEST_FIXTURE="$fixture" YEET_TEST_PROBE_SCENARIO=official-output "${base_env[@]}" "$builder" --upstream-version v1.16.1 --runtime-id firecracker-v1.16.1-yeet-v1 --out "$official_probe_out" --allow-unsigned-tag
+jq -e '.components.firecracker.version_output == "Firecracker v1.16.1"' "$official_probe_out/runtime-manifest.json" >/dev/null
 "$schema_validator" --schemafile "$repo_root/schemas/firecracker-runtime-manifest.schema.json" "$valid_out/runtime-manifest.json" >/dev/null
 jq -e '.classification == {production_release:true,default_seccomp:true} and .support.state == "supported"' "$valid_out/runtime-manifest.json" >/dev/null
 [ "$("$policy_resolver" "$repo_root/security/firecracker-runtime-policy.json" v1.15.0 | jq -r .support_state)" = eol ] || fail "EOL policy did not resolve"

@@ -95,20 +95,34 @@ for binary in "$source_firecracker" "$source_jailer"; do
 done
 install -m 0755 "$source_firecracker" "$stage/firecracker"
 install -m 0755 "$source_jailer" "$stage/jailer"
-probe() {
-	local binary="$1"
+probe_to_files() {
+	local binary="$1" stdout="$2" stderr="$3"
 	if [ -n "${YEET_RUNTIME_TEST_PROBE:-}" ]; then
 		[ "${YEET_RUNTIME_TEST_MODE:-}" = 1 ] && [ "$(uname -s)" != Linux ] || fail "test probe override is forbidden on this platform"
-		"$YEET_RUNTIME_TEST_PROBE" "$binary" --version
+		"$YEET_RUNTIME_TEST_PROBE" "$binary" --version >"$stdout" 2>"$stderr"
 	else
-		"$binary" --version
+		"$binary" --version >"$stdout" 2>"$stderr"
 	fi
 }
-firecracker_version="$(probe "$stage/firecracker" 2>"$tmp_dir/firecracker.stderr")" || fail "Firecracker version probe failed"
-jailer_version="$(probe "$stage/jailer" 2>"$tmp_dir/jailer.stderr")" || fail "jailer version probe failed"
-[ ! -s "$tmp_dir/firecracker.stderr" ] && [ ! -s "$tmp_dir/jailer.stderr" ] || fail "version probe wrote to stderr"
+firecracker_stdout="$tmp_dir/firecracker.stdout"
+firecracker_stderr="$tmp_dir/firecracker.stderr"
+jailer_stdout="$tmp_dir/jailer.stdout"
+jailer_stderr="$tmp_dir/jailer.stderr"
+probe_to_files "$stage/firecracker" "$firecracker_stdout" "$firecracker_stderr" || fail "Firecracker version probe failed"
+probe_to_files "$stage/jailer" "$jailer_stdout" "$jailer_stderr" || fail "jailer version probe failed"
+[ ! -s "$firecracker_stderr" ] && [ ! -s "$jailer_stderr" ] || fail "version probe wrote to stderr"
+firecracker_version="$(sed -n '1p' "$firecracker_stdout")"
+jailer_version="$(sed -n '1p' "$jailer_stdout")"
 [ "$firecracker_version" = "Firecracker $version" ] || fail "Firecracker version probe mismatch"
 [ "$jailer_version" = "Jailer $version" ] || fail "jailer version probe mismatch"
+firecracker_remainder="$(sed '1d; /^[[:space:]]*$/d' "$firecracker_stdout")"
+jailer_remainder="$(sed '1d; /^[[:space:]]*$/d' "$jailer_stdout")"
+if [ -n "$firecracker_remainder" ]; then
+	[ "$(printf '%s\n' "$firecracker_remainder" | awk 'END { print NR }')" = 1 ] &&
+		grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{1,9} \[anonymous-instance:main\] Firecracker exiting successfully[.] exit_code=0$' <<<"$firecracker_remainder" ||
+		fail "Firecracker version probe emitted unexpected output"
+fi
+[ -z "$jailer_remainder" ] || fail "jailer version probe emitted unexpected output"
 firecracker_digest="$(sha256sum "$stage/firecracker" | awk '{print $1}')"
 jailer_digest="$(sha256sum "$stage/jailer" | awk '{print $1}')"
 jq -n --arg runtime_id "$runtime_id" --argjson upstream "$(cat "$verification")" --argjson policy "$policy_json" \
