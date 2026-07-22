@@ -66,15 +66,19 @@ manifest_sha="$(sha256sum "$tmp_dir/kernel-manifest.json" | awk '{ print $1 }')"
 	--catalog-in "$repo_root/kernel-catalog.json" \
 	--catalog-out "$tmp_dir/kernel-catalog.json"
 
-jq -e --arg kernel_id "$kernel_id" --arg manifest_sha "$manifest_sha" '
-	.kernels == [{
+jq -e --arg kernel_id "$kernel_id" --arg manifest_sha "$manifest_sha" \
+	--slurpfile original "$repo_root/kernel-catalog.json" '
+	. as $updated |
+	([.kernels[] | select(. == {
 		kernel_id: $kernel_id,
 		upstream_version: "7.1.1",
 		packaging_revision: 1,
 		architecture: "amd64",
 		manifest_url: "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.1-yeet-v1/kernel-manifest.json",
 		manifest_sha256: $manifest_sha
-	}] and
+	})] | length) == 1 and
+	($updated.kernels | length) == (($original[0].kernels | length) + 1) and
+	($original[0].kernels - $updated.kernels | length) == 0 and
 	.channels.amd64.stable == {kernel_id: $kernel_id, manifest_sha256: $manifest_sha} and
 	.channels.amd64.candidate == null
 ' "$tmp_dir/kernel-catalog.json" >/dev/null

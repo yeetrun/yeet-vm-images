@@ -161,12 +161,16 @@ grep -q 'share/yeet-vm/kernel/selected.json' "$repo_root/kernel-packages/yeet-ke
 grep -q '"schema_version": 2' "$repo_root/kernel-packages/yeet-kernel-package.nix"
 grep -q '"release_id": "${releaseId}"' "$repo_root/kernel-packages/yeet-kernel-package.nix"
 grep -q '"manifest_sha256": "${manifestSha256}"' "$repo_root/kernel-packages/yeet-kernel-package.nix"
-jq -e '
+stable_kernel_id="$(jq -er '.channels.amd64.stable.kernel_id' "$repo_root/kernel-catalog.json")"
+stable_manifest_sha="$(jq -er '.channels.amd64.stable.manifest_sha256' "$repo_root/kernel-catalog.json")"
+stable_package_version="$(jq -er --arg id "$stable_kernel_id" '.kernels[] | select(.kernel_id == $id) | .upstream_version + "-" + (.packaging_revision | tostring)' "$repo_root/kernel-catalog.json")"
+jq -e --arg release_id "$stable_kernel_id" --arg manifest_sha "$stable_manifest_sha" --arg package_version "$stable_package_version" '
 	.schema_version == 1 and
-	.release_id == "kernel-linux-7.1.4-yeet-v1" and
-	(.manifest_sha256 | test("^[0-9a-f]{64}$")) and
+	.release_id == $release_id and
+	.manifest_sha256 == $manifest_sha and
 	.selector_schema_version == 2 and
-	.debian.package == "yeet-vm-kernel"
+	.debian.package == "yeet-vm-kernel" and
+	.debian.version == $package_version
 ' "$repo_root/kernel-packages/catalog.json" >/dev/null
 
 grep -q 'kernel_release:' "$repo_root/.github/workflows/publish-kernel-packages.yml"
