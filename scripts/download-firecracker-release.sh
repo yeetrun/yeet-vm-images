@@ -229,10 +229,29 @@ mkdir "$extract_dir"
 "$extractor" "$archive" "$tag" "$extract_dir"
 (
 	cd "$extract_dir"
-	[ "$(awk 'END { print NR }' SHA256SUMS)" = 2 ]
-	grep -Eq "^[0-9a-f]{64}  firecracker-$tag-x86_64$" SHA256SUMS
-	grep -Eq "^[0-9a-f]{64}  jailer-$tag-x86_64$" SHA256SUMS
-	sha256sum --check --strict SHA256SUMS >/dev/null
+	read -r expected_firecracker expected_jailer < <(awk \
+		-v firecracker="firecracker-$tag-x86_64" \
+		-v jailer="jailer-$tag-x86_64" '
+		BEGIN { count = 0 }
+		{
+			if (NF != 2 || $1 !~ /^[0-9a-f]+$/ || length($1) != 64) exit 1
+			name = $2
+			if (substr(name, 1, 2) == "./") name = substr(name, 3)
+			if (name !~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/ || seen[name]++) exit 1
+			count++
+			if (name == firecracker) { firecracker_count++; firecracker_digest = $1 }
+			if (name == jailer) { jailer_count++; jailer_digest = $1 }
+		}
+		END {
+			if (count < 2 || count > 64 || firecracker_count != 1 || jailer_count != 1) exit 1
+			print firecracker_digest, jailer_digest
+		}
+	' SHA256SUMS) || exit 1
+	actual_firecracker="$(sha256sum "firecracker-$tag-x86_64" | awk '{ print $1 }')"
+	actual_jailer="$(sha256sum "jailer-$tag-x86_64" | awk '{ print $1 }')"
+	if [ "$actual_firecracker" != "$expected_firecracker" ] || [ "$actual_jailer" != "$expected_jailer" ]; then
+		exit 1
+	fi
 ) || fail "upstream internal SHA256SUMS verification failed"
 
 stage="$tmp_dir/publish"

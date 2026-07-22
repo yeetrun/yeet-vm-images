@@ -89,10 +89,17 @@ def members(scenario: str):
         (f"{PREFIX}/jailer-{VERSION}-x86_64", jailer, 0o755, tarfile.REGTYPE, ""),
     ]
     if scenario == "valid-pax":
-        result.extend([
+        extras = [
             (f"{PREFIX}/LICENSE", b"fixture license\n", 0o644, tarfile.REGTYPE, ""),
             (f"{PREFIX}/seccompiler-bin-{VERSION}-x86_64", elf("seccompiler"), 0o755, tarfile.REGTYPE, ""),
-        ])
+        ]
+        result.extend(extras)
+        sums = b"".join(
+            f"{sha256(data)}  ./{PurePosixPath(name).name}\n".encode()
+            for name, data, _, kind, _ in result[1:]
+            if kind in (tarfile.REGTYPE, tarfile.AREGTYPE)
+        )
+        result[0] = (result[0][0], sums, result[0][2], result[0][3], result[0][4])
     if scenario == "oversized-total":
         large = bytes(33 * 1024 * 1024)
         return [

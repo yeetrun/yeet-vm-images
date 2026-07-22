@@ -220,6 +220,7 @@ for name in SHA256SUMS firecracker-v1.16.1-x86_64 jailer-v1.16.1-x86_64; do
 	[ -f "$tmp_dir/valid-pax-output/$name" ] || fail "valid PAX archive omitted $name"
 done
 [ "$(find "$tmp_dir/valid-pax-output" -type f | wc -l | tr -d ' ')" = 3 ] || fail "ignored PAX archive members were extracted"
+download_case "$valid_pax" "$tmp_dir/download-valid-pax" --allow-unsigned-tag
 for scenario in absolute parent dot duplicate-normalized duplicate-effective symlink hardlink device fifo socket sparse pax pax-size pax-unknown global-pax gnu-longname unexpected-type unexpected-prefix bad-mode invalid-encoding embedded-nul oversized-member oversized-total decompression-bomb; do
 	assert_download_failure "$scenario" "$scenario" 'archive inspection failed'
 done
