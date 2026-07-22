@@ -284,28 +284,86 @@ jobs:
             sha256sum --check --strict checksums.txt
           )
 
-      - name: Prepare candidate catalog change
+  open-candidate-pr:
+    name: Open NixOS guest candidate PR
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: firecracker-runtime-promotion
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the exact build commit without credentials
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install catalog verification dependencies
         run: |
           set -euo pipefail
-          manifest_sha256="$(sha256sum "$OUT_DIR/guest-manifest.json" | awk '{ print $1 }')"
+          sudo apt-get update
+          sudo apt-get install -y jq pipx python3
+          pipx install check-jsonschema==0.37.4
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Prepare candidate catalog change from the immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GUEST_BASE_ID: ${{ inputs.guest_base_id }}
+        run: |
+          set -euo pipefail
+          release_json="$RUNNER_TEMP/guest-release.json"
+          manifest="$RUNNER_TEMP/guest-manifest.json"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GUEST_BASE_ID}" >"$release_json"
+          jq -e --arg tag "$GUEST_BASE_ID" '
+            .tag_name == $tag and .draft == false and .prerelease == false and .immutable == true
+          ' "$release_json" >/dev/null
+          gh release download "$GUEST_BASE_ID" --pattern guest-manifest.json --output "$manifest"
+          manifest_sha256="$(sha256sum "$manifest" | awk '{ print $1 }')"
+          jq -e --arg digest "sha256:$manifest_sha256" '
+            any(.assets[]; .name == "guest-manifest.json" and .digest == $digest)
+          ' "$release_json" >/dev/null
           scripts/update-guest-catalog.sh \
-            --manifest "$OUT_DIR/guest-manifest.json" \
+            --manifest "$manifest" \
             --manifest-sha256 "$manifest_sha256" \
             --channel candidate \
             --catalog-in guest-catalog.json \
             --catalog-out "$RUNNER_TEMP/guest-catalog.json"
           mv "$RUNNER_TEMP/guest-catalog.json" guest-catalog.json
           scripts/verify-component-catalogs.sh
+          [ "$(git diff --name-only)" = guest-catalog.json ]
 
-      - name: Open candidate catalog PR
-        uses: peter-evans/create-pull-request@v7
+      - name: Mint repository-scoped catalog token
+        id: catalog-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
         with:
-          branch: automation/${{ inputs.guest_base_id }}
-          delete-branch: true
-          commit-message: catalog add ${{ inputs.guest_base_id }} candidate
-          title: Add ${{ inputs.guest_base_id }} as candidate
-          body: |
-            Adds the independently published NixOS guest base to the candidate channel.
+          client-id: ${{ vars.YEET_RUNTIME_GITHUB_APP_CLIENT_ID }}
+          private-key: ${{ secrets.YEET_RUNTIME_GITHUB_APP_PRIVATE_KEY }}
+          owner: yeetrun
+          repositories: yeet-vm-images
+          permission-contents: write
+          permission-pull-requests: write
 
-            Stable promotion remains a separate reviewed change after Catch provisioning validation.
-          add-paths: guest-catalog.json
+      - name: Commit, push, and open the candidate PR
+        env:
+          GH_TOKEN: ${{ steps.catalog-app-token.outputs.token }}
+          GUEST_BASE_ID: ${{ inputs.guest_base_id }}
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN
+          branch="automation/$GUEST_BASE_ID"
+          if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+            echo "Candidate branch already exists: $branch" >&2
+            exit 1
+          fi
+          git switch -c "$branch"
+          git config user.name yeet-component-promotion[bot]
+          git config user.email 0+yeet-component-promotion[bot]@users.noreply.github.com
+          git add -- guest-catalog.json
+          git commit -m "catalog add $GUEST_BASE_ID candidate"
+          gh auth setup-git
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+            --title "Add $GUEST_BASE_ID as candidate" \
+            --body "Adds the independently published NixOS guest base to the candidate channel. Stable promotion remains separate until live validation passes."

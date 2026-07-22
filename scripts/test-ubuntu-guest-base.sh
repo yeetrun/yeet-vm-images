@@ -124,9 +124,18 @@ for required in \
 	'scripts/update-guest-catalog.sh' \
 	'scripts/publish-guest-base-assets.sh' \
 	'--channel candidate' \
-	'peter-evans/create-pull-request@'
+	'actions/create-github-app-token@' \
+	'environment: firecracker-runtime-promotion' \
+	'gh pr create'
 do
 	grep -Fq -- "$required" "$workflow"
+done
+if grep -Fq 'peter-evans/create-pull-request@' "$workflow"; then
+	echo "Ubuntu candidate promotion still relies on the organization-blocked Actions token" >&2
+	exit 1
+fi
+for ignored in '.build-work/' 'dist/' 'yeet-src/'; do
+	grep -Fxq -- "$ignored" "$repo_root/.gitignore"
 done
 
 for forbidden in \
