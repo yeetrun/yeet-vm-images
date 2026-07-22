@@ -16,6 +16,14 @@
       "architecture": "amd64",
       "manifest_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/guest-ubuntu-26.04-amd64-v2/guest-manifest.json",
       "manifest_sha256": "26d329ea6ebbe1037d85619c87db55d405459022f3ca1e9f0f6fe704b9a1f70f"
+    },
+    {
+      "guest_base_id": "guest-ubuntu-26.04-amd64-v3",
+      "os": "ubuntu",
+      "os_version": "26.04",
+      "architecture": "amd64",
+      "manifest_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/guest-ubuntu-26.04-amd64-v3/guest-manifest.json",
+      "manifest_sha256": "7a73c9d03cb1633eb1f89a7f1202ff090e0422349e11d745f1a0f7d392f62ac5"
     }
   ],
   "channels": {
@@ -35,8 +43,8 @@
         "manifest_sha256": "26d329ea6ebbe1037d85619c87db55d405459022f3ca1e9f0f6fe704b9a1f70f"
       },
       "candidate": {
-        "guest_base_id": "guest-ubuntu-26.04-amd64-v2",
-        "manifest_sha256": "26d329ea6ebbe1037d85619c87db55d405459022f3ca1e9f0f6fe704b9a1f70f"
+        "guest_base_id": "guest-ubuntu-26.04-amd64-v3",
+        "manifest_sha256": "7a73c9d03cb1633eb1f89a7f1202ff090e0422349e11d745f1a0f7d392f62ac5"
       }
     }
   }
