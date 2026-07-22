@@ -1,2 +1,3 @@
 # Reviewed upstream Firecracker release-tag signing fingerprints belong here.
 # One full, uppercase OpenPGP primary fingerprint per line; no trust-on-first-use.
+192778948C7AC9DE9EE677BFC36283F6CAA7410D

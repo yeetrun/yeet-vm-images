@@ -220,8 +220,12 @@ compressed_cap="$tmp_dir/compressed-cap.tgz"; truncate -s $((128 * 1024 * 1024 +
 if "$extractor" "$compressed_cap" v1.16.1 "$tmp_dir/compressed-cap-out" >/dev/null 2>&1; then fail "compressed archive cap was not enforced"; fi
 assert_download_failure wrong-internal wrong-internal-digest 'internal SHA256SUMS'
 
-# I1 private signer state. Original empty reviewed key directory fails signed tags closed.
-set +e; pgp_missing="$(YEET_TEST_GIT_SCENARIO=pgp download_case "$fixture" "$tmp_dir/pgp-missing" 2>&1)"; pgp_missing_rc=$?; set -e
+# I1 private signer state. An isolated empty reviewed key directory fails signed tags closed.
+missing_root="$tmp_dir/missing-root"; mkdir -p "$missing_root/scripts" "$missing_root/security/firecracker-trusted-keys"
+cp "$downloader" "$extractor" "$atomic_rename" "$missing_root/scripts/"
+printf '%s\n' '# empty trust fixture' >"$missing_root/security/firecracker-trusted-signers.txt"
+missing_downloader="$missing_root/scripts/download-firecracker-release.sh"
+set +e; pgp_missing="$(YEET_TEST_FIXTURE="$fixture" YEET_TEST_GIT_SCENARIO=pgp "${base_env[@]}" "$missing_downloader" --upstream-version v1.16.1 --dest "$tmp_dir/pgp-missing" 2>&1)"; pgp_missing_rc=$?; set -e
 if [ "$pgp_missing_rc" -eq 0 ] || ! grep -Fqi 'no reviewed key material' <<<"$pgp_missing"; then fail "signed tag used ambient keyring"; fi
 signed_root="$tmp_dir/signed-root"; mkdir -p "$signed_root/scripts" "$signed_root/security/firecracker-trusted-keys"
 cp "$downloader" "$extractor" "$atomic_rename" "$signed_root/scripts/"
