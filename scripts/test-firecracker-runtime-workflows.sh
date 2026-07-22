@@ -133,6 +133,8 @@ require_text "$integration" '!contains(github.event.release.tag_name, '\''-integ
 require_text "$integration" '!contains(github.event.release.tag_name, '\''-canary-'\'')' "canary evidence release recursion is not rejected"
 require_text "$integration" 'scripts/verify-published-firecracker-runtime.sh' "integration does not reverify the exact runtime release"
 require_text "$integration" 'runs-on: [self-hosted, linux, x64, kvm, yeet-runtime-integration]' "integration runner labels differ"
+require_text "$integration" 'sudo apt-get install -y curl gh git jq pipx python3' "integration runner dependencies are not installed by the pinned workflow"
+require_text "$integration" 'pipx install check-jsonschema==0.37.4' "integration schema validator is not pinned by the workflow"
 require_text "$integration" '    environment: firecracker-runtime-integration-publish' "integration publishing environment is missing"
 require_text "$integration" '      group: firecracker-runtime-integration-publish' "integration publishing concurrency is missing"
 require_text "$integration" '      cancel-in-progress: false' "integration publication cancellation differs"
