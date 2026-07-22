@@ -56,6 +56,8 @@ require_text "$build" '  workflow_call:' "reusable workflow_call trigger is miss
 for input in upstream_version runtime_id allow_unsigned_tag allow_signer_rotation; do
 	require_text "$build" "      $input:" "workflow_call input is missing: $input"
 done
+require_text "$build" '    secrets:' "workflow_call secret contract is missing"
+require_text "$build" '      YEET_RUNTIME_GITHUB_APP_PRIVATE_KEY:' "workflow_call App private-key secret is not declared"
 python3 - "$build" <<'PY'
 from pathlib import Path
 import re

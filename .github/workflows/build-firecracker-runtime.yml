@@ -21,6 +21,10 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      YEET_RUNTIME_GITHUB_APP_PRIVATE_KEY:
+        description: GitHub App private key supplied by the protected publishing environment.
+        required: false
     outputs:
       runtime_id:
         description: Immutable runtime candidate ID.
