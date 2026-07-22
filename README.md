@@ -199,14 +199,15 @@ image aliases.
 
 ### Firecracker Runtime Candidates
 
-The `sync-latest-stable-firecracker.yml` workflow runs daily and can be started
-manually. It discovers the newest official stable Firecracker release and calls
-the local reusable `build-firecracker-runtime.yml` workflow only when that
-upstream version has no verified immutable candidate release. All remote runtime
-tag refs allocate packaging revisions, so a preserved tag or draft consumes its
-`vN` and the next attempt uses `vN+1`. The scheduled workflow passes that exact
-ID to the reusable workflow, which independently re-resolves it inside the
-serialized job before building.
+The `build-firecracker-runtime.yml` workflow runs daily and can be started
+manually. It discovers the newest official stable Firecracker release and enters
+its protected publishing job only when that upstream version has no verified
+immutable candidate release. Discovery and publication intentionally live in
+the same workflow so the write-bearing job receives its environment-scoped App
+credential directly. All remote runtime tag refs allocate packaging revisions,
+so a preserved tag or draft consumes its `vN` and the next attempt uses `vN+1`.
+The serialized job independently re-resolves the discovered exact ID before
+building.
 
 Before reporting a no-op, `verify-published-firecracker-runtime.sh` verifies the
 published release identity and immutable state, its exact four asset records and

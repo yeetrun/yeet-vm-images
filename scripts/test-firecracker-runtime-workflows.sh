@@ -5,7 +5,6 @@ export LC_ALL=C
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build="$repo_root/.github/workflows/build-firecracker-runtime.yml"
-sync="$repo_root/.github/workflows/sync-latest-stable-firecracker.yml"
 integration="$repo_root/.github/workflows/test-firecracker-runtime-kvm.yml"
 promotion="$repo_root/.github/workflows/promote-firecracker-runtime.yml"
 integration_gate="$repo_root/runtime-integration.json"
@@ -42,7 +41,6 @@ reject_text() {
 }
 
 require_file "$build"
-require_file "$sync"
 require_file "$integration"
 require_file "$promotion"
 require_file "$integration_gate"
@@ -51,31 +49,20 @@ require_file "$published_kernel_downloader"
 require_file "$published_verifier"
 require_file "$published_test"
 
-# Reusable interface and immutable candidate outputs.
-require_text "$build" '  workflow_call:' "reusable workflow_call trigger is missing"
-for input in upstream_version runtime_id allow_unsigned_tag allow_signer_rotation; do
-	require_text "$build" "      $input:" "workflow_call input is missing: $input"
+# Scheduled/manual discovery and protected publication live in one workflow so
+# environment secrets are resolved by the write-bearing job itself.
+require_text "$build" '    - cron: "37 9 * * *"' "daily discovery schedule is missing or changed"
+require_text "$build" '  workflow_dispatch:' "manual discovery trigger is missing"
+[ "$(grep -Fc '    - cron:' "$build")" = 1 ] || fail "discovery workflow must contain exactly one schedule"
+for input in allow_unsigned_tag allow_signer_rotation; do
+	require_text "$build" "      $input:" "workflow_dispatch input is missing: $input"
 done
-require_text "$build" '    secrets:' "workflow_call secret contract is missing"
-require_text "$build" '      YEET_RUNTIME_GITHUB_APP_PRIVATE_KEY:' "workflow_call App private-key secret is not declared"
-python3 - "$build" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-text = Path(sys.argv[1]).read_text(encoding="utf-8")
-match = re.search(r"(?m)^      runtime_id:\n(?P<body>(?:^        .*\n)+)", text)
-if not match or "required: true" not in match.group("body") or "default:" in match.group("body"):
-    raise SystemExit("runtime_id workflow_call input must be required with no default")
-PY
-for output in runtime_id manifest_url manifest_sha256 release_url; do
-	require_text "$build" "      $output:" "workflow_call output is missing: $output"
-	require_text "$build" "jobs.publish-firecracker-runtime.outputs.$output" "workflow_call output is not wired to the publishing job: $output"
+for extra_trigger in '  push:' '  pull_request:' '  repository_dispatch:' '  workflow_call:'; do
+	reject_text "$build" "$extra_trigger" "discovery workflow contains an unplanned trigger: $extra_trigger"
 done
-reject_text "$build" '  workflow_dispatch:' "reusable workflow must not be directly dispatched"
 
 # The default token stays read-only. Writes use one protected serialized job.
-require_text "$build" $'permissions:\n  contents: read' "reusable workflow default token is not contents:read"
+require_text "$build" $'permissions:\n  contents: read' "workflow default token is not contents:read"
 require_text "$build" '  publish-firecracker-runtime:' "publishing job ID is missing"
 require_text "$build" '      group: firecracker-runtime-publish' "publishing concurrency group is missing"
 require_text "$build" '      cancel-in-progress: false' "publishing cancellation policy is missing"
@@ -94,14 +81,14 @@ require_text "$build" 'permission-administration: read' "App token Administratio
 require_text "$build" 'permission-contents: write' "App token Contents:write restriction is missing"
 require_text "$build" 'GH_TOKEN: ${{ steps.runtime-app-token.outputs.token }}' "App token is not wired to the publication step"
 [ "$(grep -Fc 'steps.runtime-app-token.outputs.token' "$build")" = 1 ] || fail "App token is exposed outside the single publication step"
-reject_text "$build" 'GH_TOKEN: ${{ github.token }}' "default token is used as a publication fallback"
+[ "$(grep -Fc 'GH_TOKEN: ${{ github.token }}' "$build")" = 1 ] || fail "default token must be limited to the read-only discovery step"
 reject_text "$build" 'GH_TOKEN: ${{ secrets.' "personal or generic secret token fallback remains"
 
-# Called-workflow identity must match Task 3 exactly.
-require_text "$build" 'YEET_RUNTIME_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}' "called-workflow repository context is missing"
-require_text "$build" 'YEET_RUNTIME_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}' "called-workflow file-path context is missing"
-require_text "$build" 'YEET_RUNTIME_WORKFLOW_REF: ${{ job.workflow_ref }}' "called-workflow ref context is missing"
-require_text "$build" 'YEET_RUNTIME_WORKFLOW_SHA: ${{ job.workflow_sha }}' "called-workflow SHA context is missing"
+# Workflow identity must match Task 3 exactly.
+require_text "$build" 'YEET_RUNTIME_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}' "workflow repository context is missing"
+require_text "$build" 'YEET_RUNTIME_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}' "workflow file-path context is missing"
+require_text "$build" 'YEET_RUNTIME_WORKFLOW_REF: ${{ job.workflow_ref }}' "workflow ref context is missing"
+require_text "$build" 'YEET_RUNTIME_WORKFLOW_SHA: ${{ job.workflow_sha }}' "workflow SHA context is missing"
 
 # Revision resolution, exact bundle verification, publication, and integration event.
 require_text "$build" 'scripts/resolve-firecracker-runtime-release.sh' "packaging revision is not resolved inside the publishing job"
@@ -117,62 +104,20 @@ reject_text "$build" 'repository_dispatch' "post-publication repository_dispatch
 reject_text "$build" '/dispatches' "post-publication dispatch API call remains"
 reject_text "$build" 'event_type' "post-publication event payload remains"
 
-# Only the scheduled/manual workflow may call the reusable workflow, and only locally.
-require_text "$sync" '    - cron: "37 9 * * *"' "daily discovery schedule is missing or changed"
-require_text "$sync" '  workflow_dispatch:' "manual discovery trigger is missing"
-[ "$(grep -Fc '    - cron:' "$sync")" = 1 ] || fail "discovery workflow must contain exactly one schedule"
-for extra_trigger in '  push:' '  pull_request:' '  repository_dispatch:' '  workflow_call:'; do
-	reject_text "$sync" "$extra_trigger" "discovery workflow contains an unplanned trigger: $extra_trigger"
-done
-require_text "$sync" $'permissions:\n  contents: read' "discovery default token is not contents:read"
-require_text "$sync" '  group: sync-latest-stable-firecracker' "discovery concurrency group is missing"
-require_text "$sync" '  cancel-in-progress: false' "discovery cancellation policy is missing"
-require_text "$sync" 'scripts/resolve-latest-firecracker.sh' "official stable release discovery is missing"
-require_text "$sync" 'scripts/resolve-firecracker-runtime-release.sh' "existing candidate comparison is missing"
-require_text "$sync" 'scripts/verify-published-firecracker-runtime.sh' "published candidate is not verified before no-op"
-require_text "$sync" 'allocation="$(scripts/resolve-firecracker-runtime-release.sh "$upstream_version")"' "next revision is not allocated from all remote tag refs"
-require_text "$sync" 'published="$(scripts/resolve-firecracker-runtime-release.sh "$upstream_version" "$published_tags")"' "published candidates are not resolved separately"
-require_text "$sync" "jq -er '.upstream_version'" "discovery does not read the resolver's upstream_version field"
-reject_text "$sync" "jq -er '.version'" "discovery reads a nonexistent resolver version field"
-require_text "$sync" "runtime_id=\$runtime_id" "discovery does not expose the computed next runtime ID"
-require_text "$sync" 'uses: ./.github/workflows/build-firecracker-runtime.yml' "exact local reusable-workflow call is missing"
-reject_text "$sync" './.github/workflows/build-firecracker-runtime.yml@' "local reusable-workflow call contains a ref"
-require_text "$sync" 'runtime_id: ${{ needs.discover.outputs.runtime_id }}' "replay-safe runtime ID is not passed to the serialized workflow"
-require_text "$sync" 'Candidate already exists; no publication requested.' "verified no-op summary is missing"
-require_text "$sync" 'DISCOVERY_RESULT: ${{ needs.discover.result }}' "summary does not distinguish discovery failure from a verified no-op"
-
-validate_callers() {
-	python3 - "$1" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-root = Path(sys.argv[1])
-matches = []
-for path in sorted(path for path in root.iterdir() if path.suffix in {".yml", ".yaml"}):
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        match = re.match(r"\s*uses:\s*(\S+)\s*$", line)
-        if match and "build-firecracker-runtime.yml" in match.group(1):
-            matches.append((path.name, number, match.group(1)))
-expected = [("sync-latest-stable-firecracker.yml", "./.github/workflows/build-firecracker-runtime.yml")]
-actual = [(name, value) for name, _, value in matches]
-if actual != expected:
-    raise SystemExit(f"unexpected runtime workflow callers: {matches}")
-PY
-}
-validate_callers "$repo_root/.github/workflows" || fail "reusable runtime workflow has an alternate caller"
-mutation_root="$tmp_dir/caller-mutation"
-mkdir -p "$mutation_root"
-cp "$repo_root/.github/workflows/"*.yml "$mutation_root/"
-sed 's#uses: ./\.github/workflows/build-firecracker-runtime.yml#uses: yeetrun/yeet-vm-images/.github/workflows/build-firecracker-runtime.yml@main#' "$sync" >"$mutation_root/sync-latest-stable-firecracker.yml"
-if validate_callers "$mutation_root" >/dev/null 2>&1; then fail "external/ref reusable-workflow caller mutation was accepted"; fi
-cp "$sync" "$mutation_root/sync-latest-stable-firecracker.yml"
-cat >"$mutation_root/alternate-caller.yaml" <<'YAML'
-jobs:
-  publish:
-    uses: ./.github/workflows/build-firecracker-runtime.yml
-YAML
-if validate_callers "$mutation_root" >/dev/null 2>&1; then fail "second .yaml reusable-workflow caller mutation was accepted"; fi
+# Discovery, revision allocation, protected publication, and no-op reporting are
+# bound to the same reviewed main-branch workflow.
+require_text "$build" '  group: sync-latest-stable-firecracker' "discovery concurrency group is missing"
+require_text "$build" '  cancel-in-progress: false' "discovery cancellation policy is missing"
+require_text "$build" 'scripts/resolve-latest-firecracker.sh' "official stable release discovery is missing"
+require_text "$build" 'scripts/verify-published-firecracker-runtime.sh' "published candidate is not verified before no-op"
+require_text "$build" 'allocation="$(scripts/resolve-firecracker-runtime-release.sh "$upstream_version")"' "next revision is not allocated from all remote tag refs"
+require_text "$build" 'published="$(scripts/resolve-firecracker-runtime-release.sh "$upstream_version" "$published_tags")"' "published candidates are not resolved separately"
+require_text "$build" "jq -er '.upstream_version'" "discovery does not read the resolver's upstream_version field"
+reject_text "$build" "jq -er '.version'" "discovery reads a nonexistent resolver version field"
+require_text "$build" "runtime_id=\$runtime_id" "discovery does not expose the computed next runtime ID"
+require_text "$build" 'REQUESTED_RUNTIME_ID: ${{ needs.discover.outputs.runtime_id }}' "replay-safe runtime ID is not passed to the serialized publishing job"
+require_text "$build" 'Candidate already exists; no publication requested.' "verified no-op summary is missing"
+require_text "$build" 'DISCOVERY_RESULT: ${{ needs.discover.result }}' "summary does not distinguish discovery failure from a verified no-op"
 
 # Integration is started by the immutable runtime release event or an exact
 # manual recovery request. Bootstrap dispatches discovery, never the build job.
@@ -355,8 +300,8 @@ for mutation in "$promotion_mutations"/*.yml; do
 	if validate_promotion_identity "$mutation" >/dev/null 2>&1; then fail "promotion identity mutation was accepted: $(basename "$mutation")"; fi
 done
 
-# The manual bootstrap is the sync workflow. No workflow may dispatch or call
-# the reusable build workflow except its approved local caller.
+# The manual bootstrap is the direct build/publish workflow. No integration or
+# promotion workflow may invoke it as a nested write path.
 reject_text "$integration" 'build-firecracker-runtime.yml' "integration calls the build workflow directly"
 reject_text "$promotion" 'build-firecracker-runtime.yml' "promotion calls the build workflow directly"
 publishers="$(rg -l --fixed-strings 'scripts/publish-firecracker-runtime-assets.sh' "$repo_root/.github/workflows" || true)"
@@ -373,23 +318,21 @@ published_fixture="$("$revision_resolver" v1.16.1 "$published_tags_fixture")"
 jq -e '.next_release == "firecracker-v1.16.1-yeet-v2"' <<<"$allocation_fixture" >/dev/null || fail "tag-only/draft v1 did not allocate v2"
 jq -e '.current_release == ""' <<<"$published_fixture" >/dev/null || fail "tag-only/draft v1 was treated as a published no-op"
 
-# Every external action is full-SHA pinned; the local workflow call is the sole exception.
-python3 - "$build" "$sync" "$integration" "$promotion" "$checkout_sha" <<'PY'
+# Every external action is full-SHA pinned.
+python3 - "$build" "$integration" "$promotion" "$checkout_sha" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-checkout_sha = sys.argv[5]
+checkout_sha = sys.argv[4]
 checkout_count = 0
-for raw_path in sys.argv[1:5]:
+for raw_path in sys.argv[1:4]:
     path = Path(raw_path)
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         match = re.match(r"\s*-?\s*uses:\s*(\S+)\s*$", line)
         if not match:
             continue
         value = match.group(1)
-        if value == "./.github/workflows/build-firecracker-runtime.yml":
-            continue
         action = re.fullmatch(r"([^@]+)@([0-9a-f]{40})", value)
         if not action:
             raise SystemExit(f"{path}:{number}: action is not pinned to a full commit SHA: {value}")
@@ -402,7 +345,7 @@ if checkout_count != 7:
 PY
 
 # No mutable alias, overwrite, destructive cleanup, or catalog mutation path.
-for workflow in "$build" "$sync"; do
+for workflow in "$build"; do
 	for forbidden in '--clobber' '--overwrite' 'runtime-catalog.json' 'make_latest' 'gh release delete' 'git tag -f'; do
 		reject_text "$workflow" "$forbidden" "forbidden mutable publication behavior remains: $forbidden"
 	done
@@ -429,7 +372,7 @@ for summary_text in \
 	'Discovery failed. Inspect the failed step before retrying.' \
 	'Candidate publication failed. Inspect the failed step; do not reuse a consumed runtime ID.' \
 	'Candidate outputs are missing. Inspect the publication job and preserved release state.'; do
-	if ! grep -Fq "$summary_text" "$build" "$sync"; then fail "actionable workflow failure summary is missing: $summary_text"; fi
+	if ! grep -Fq "$summary_text" "$build"; then fail "actionable workflow failure summary is missing: $summary_text"; fi
 done
 
 [ "$(git -C "$repo_root" status --porcelain=v1)" = "$initial_status" ] || fail "test changed repository status"
