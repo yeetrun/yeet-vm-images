@@ -138,7 +138,13 @@ for asset in "${assets[@]}"; do
 		--header 'Content-Type: application/octet-stream' --input "$path" >/dev/null
 	digest="sha256:$(sha256sum "$path" | awk '{print $1}')"; size="$(wc -c <"$path" | tr -d ' ')"
 	jq -e --arg name "$asset" --arg digest "$digest" --argjson size "$size" \
-		'.name==$name and .state=="uploaded" and .size==$size and .digest==$digest' "$uploaded" >/dev/null || fail "uploaded asset response mismatch: $asset"
+		'(.browser_download_url | split("/")) as $parts |
+		 .name==$name and .state=="uploaded" and .size==$size and .digest==$digest and
+		 ($parts | length) == 9 and $parts[0] == "https:" and $parts[1] == "" and
+		 $parts[2] == "github.com" and $parts[3] == "yeetrun" and
+		 $parts[4] == "yeet-vm-images" and $parts[5] == "releases" and
+		 $parts[6] == "download" and ($parts[7] | test("^untagged-[0-9a-f]+$")) and
+		 $parts[8] == $name' "$uploaded" >/dev/null || fail "uploaded asset response mismatch: $asset"
 done
 
 list_assets() {
@@ -147,11 +153,18 @@ list_assets() {
 	[ "$(jq 'length' "$output")" -lt 100 ] || fail "unexpected asset pagination"
 }
 verify_assets() {
-	local input="$1"
+	local input="$1" release_state="$2"
 	[ "$(jq 'length' "$input")" = 2 ] || fail "attestation release must contain exactly two assets"
 	for asset in "${assets[@]}"; do
 		path="$(asset_path "$asset")"; digest="sha256:$(sha256sum "$path" | awk '{print $1}')"; size="$(wc -c <"$path" | tr -d ' ')"
-		browser="https://github.com/$repository/releases/download/$tag/$asset"
+		case "$release_state" in
+			draft)
+				encoded="$(jq -nr --arg value "$asset" '$value|@uri')"
+				browser="$(jq -er '.browser_download_url' "$tmp_dir/uploaded-$encoded.json")"
+				;;
+			published) browser="https://github.com/$repository/releases/download/$tag/$asset" ;;
+			*) fail "invalid release state for asset verification" ;;
+		esac
 		jq -e --arg name "$asset" --arg digest "$digest" --argjson size "$size" --arg browser "$browser" --arg repo "$repository" '
           ([.[] | select(.name==$name and .state=="uploaded" and .size==$size and .digest==$digest and
             (.id|type=="number" and . > 0 and floor == .) and
@@ -161,12 +174,12 @@ verify_assets() {
 	done
 }
 assets_json="$tmp_dir/assets.json"
-list_assets "$assets_json"; verify_assets "$assets_json"
+list_assets "$assets_json"; verify_assets "$assets_json" draft
 pre="$tmp_dir/pre.json"; api_call 200 GET "repos/$repository/releases/$release_id" "$pre" >/dev/null
 jq -e --arg tag "$tag" --argjson id "$release_id" '.id==$id and .tag_name==$tag and .draft==true and .prerelease==false' "$pre" >/dev/null || fail "draft release identity mismatch"
-list_assets "$assets_json"; verify_assets "$assets_json"; resolve_ref
+list_assets "$assets_json"; verify_assets "$assets_json" draft; resolve_ref
 publish_request="$tmp_dir/publish.json"; jq -n '{draft:false}' >"$publish_request"
 published="$tmp_dir/published.json"; api_call 200 PATCH "repos/$repository/releases/$release_id" "$published" --input "$publish_request" >/dev/null
 final="$tmp_dir/final.json"; api_call 200 GET "repos/$repository/releases/$release_id" "$final" >/dev/null
 jq -e --arg tag "$tag" --argjson id "$release_id" '.id==$id and .tag_name==$tag and .draft==false and .prerelease==false and .published_at!=null and .immutable==true' "$final" >/dev/null || fail "published attestation release is not immutable and final"
-list_assets "$assets_json"; verify_assets "$assets_json"; resolve_ref
+list_assets "$assets_json"; verify_assets "$assets_json" published; resolve_ref

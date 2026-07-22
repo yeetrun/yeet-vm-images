@@ -163,7 +163,11 @@ asset_json() {
 	case "$name" in runtime-attestation.json) id=501 ;; runtime-attestation.sha256) id=502 ;; *) id=599 ;; esac
 	path="$(asset_path "$name")"; size="$(wc -c <"$path" | tr -d ' ')"; digest="sha256:$(sha256sum "$path" | awk '{print $1}')"
 	url="https://api.github.com/repos/yeetrun/yeet-vm-images/releases/assets/$id"
-	browser="https://github.com/yeetrun/yeet-vm-images/releases/download/$tag/$name"
+	if [ -e "$state.published" ]; then
+		browser="https://github.com/yeetrun/yeet-vm-images/releases/download/$tag/$name"
+	else
+		browser="https://github.com/yeetrun/yeet-vm-images/releases/download/untagged-49c39c20aae142532275/$name"
+	fi
 	[ "$scenario" != wrong-url ] || { url="https://api.github.com/repos/other/repo/releases/assets/$id"; browser="https://example.invalid/$name"; }
 	[ "$scenario" != wrong-digest ] || digest="sha256:$(printf '0%.0s' {1..64})"
 	[ "$scenario" != wrong-size ] || size=$((size + 1))
