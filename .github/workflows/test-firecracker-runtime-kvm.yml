@@ -208,6 +208,12 @@ jobs:
           pipx install check-jsonschema==0.37.4
           echo "$HOME/.local/bin" >>"$GITHUB_PATH"
 
+      - name: Install the exact Yeet Go toolchain
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: yeet-src/go.mod
+          cache-dependency-path: yeet-src/go.sum
+
       - name: Check KVM runner prerequisites and execute the pinned matrix
         env:
           GH_TOKEN: ${{ github.token }}
