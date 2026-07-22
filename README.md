@@ -183,6 +183,11 @@ Publishing is workflow-driven:
 - `sync-latest-stable-kernel.yml` checks for newer stable kernels and opens
   reviewed kernel catalog promotions without rebuilding guest bases.
 
+The component compatibility and promotion sequence is defined in the
+[component release runbook](docs/component-release-runbook.md). Component
+candidates are not promoted until a Catch revision with dual-read provisioning
+and measured monolithic adoption has passed the live compatibility gate.
+
 The Ubuntu and NixOS guest-base workflows check out `yeetrun/yeet` at
 `yeet_ref`, verify an exact stable kernel selector package, build and
 re-download a rootfs-only release, then open a candidate catalog PR. NixOS also
