@@ -100,8 +100,8 @@ attestation_filter='
   .tested_yeet.repository == "yeetrun/yeet" and
   (.tested_yeet.commit | commit) and
   (.artifacts | keys == ["current_kernel_release", "nixos_guest_release", "previous_kernel_release", "ubuntu_guest_release"]) and
-  (.artifacts.ubuntu_guest_release | test("^ubuntu-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
-  (.artifacts.nixos_guest_release | test("^nixos-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
+  (.artifacts.ubuntu_guest_release | test("^guest-ubuntu-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$")) and
+  (.artifacts.nixos_guest_release | test("^guest-nixos-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$")) and
   (.artifacts.current_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
   (.artifacts.previous_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
   (.matrix | keys == ["current_kernel", "custom_roots", "jailer_drop", "nixos", "previous_kernel", "raw", "ubuntu", "zfs"]) and
@@ -417,7 +417,7 @@ assert_attestation_schema_rejected "mutable guest alias" "$tmp_dir/mutable-guest
 jq '.artifacts.ubuntu_guest_release = "ubuntu-24.04-amd64-v11"
   | .artifacts.nixos_guest_release = "nixos-24.11-amd64-v15"' \
 	"$runtime_attestation" >"$tmp_dir/legacy-immutable-guests.json"
-schema_validate "$attestation_schema" "$tmp_dir/legacy-immutable-guests.json"
+assert_attestation_schema_rejected "legacy monolithic guest releases" "$tmp_dir/legacy-immutable-guests.json"
 
 jq '.unexpected = "hostile"' \
 	"$runtime_attestation" >"$tmp_dir/attestation-unknown-root-field.json"

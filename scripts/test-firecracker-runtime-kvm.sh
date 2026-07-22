@@ -28,8 +28,8 @@ for required in runtime_release runtime_manifest_sha256 ubuntu_guest_release nix
 done
 [[ "$runtime_release" =~ ^firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*$ ]] || fail "invalid runtime release"
 [[ "$runtime_manifest_sha256" =~ ^[0-9a-f]{64}$ ]] || fail "invalid runtime manifest digest"
-[[ "$ubuntu_guest_release" =~ ^ubuntu-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$ ]] || fail "Ubuntu release must be an exact immutable ID"
-[[ "$nixos_guest_release" =~ ^nixos-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$ ]] || fail "NixOS release must be an exact immutable ID"
+[[ "$ubuntu_guest_release" =~ ^guest-ubuntu-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$ ]] || fail "Ubuntu guest-base release must be an exact immutable ID"
+[[ "$nixos_guest_release" =~ ^guest-nixos-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$ ]] || fail "NixOS guest-base release must be an exact immutable ID"
 [[ "$current_kernel_release" =~ ^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$ ]] || fail "current kernel must be an exact immutable ID"
 [[ "$previous_kernel_release" =~ ^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$ ]] || fail "previous kernel must be an exact immutable ID"
 [[ "$yeet_ref" =~ ^[0-9a-f]{40}$ ]] || fail "Yeet ref must be an exact commit"
@@ -48,15 +48,17 @@ test_mode="${YEET_RUNTIME_KVM_TEST_MODE:-0}"
 if [ "$test_mode" != 1 ] && {
 	[ -n "${YEET_KVM_VERIFY_RUNTIME:-}" ] || [ -n "${YEET_KVM_DOWNLOAD_RUNTIME:-}" ] ||
 		[ -n "${YEET_KVM_DOWNLOAD_GUEST:-}" ] || [ -n "${YEET_KVM_DOWNLOAD_KERNEL:-}" ] ||
+		[ -n "${YEET_KVM_SYNTHESIZE_GUEST:-}" ] ||
 		[ -n "${YEET_KVM_CASE_RUNNER:-}" ];
 }; then
 	fail "integration helper overrides require explicit test mode"
 fi
 verify_runtime="${YEET_KVM_VERIFY_RUNTIME:-$repo_root/scripts/verify-published-firecracker-runtime.sh}"
 download_runtime="${YEET_KVM_DOWNLOAD_RUNTIME:-$repo_root/scripts/download-published-firecracker-runtime.sh}"
-download_guest="${YEET_KVM_DOWNLOAD_GUEST:-$repo_root/scripts/download-vm-image-release.sh}"
+download_guest="${YEET_KVM_DOWNLOAD_GUEST:-$repo_root/scripts/download-published-guest-base.sh}"
 download_kernel="${YEET_KVM_DOWNLOAD_KERNEL:-$repo_root/scripts/download-published-kernel-release.sh}"
-for helper in "$verify_runtime" "$download_runtime" "$download_guest" "$download_kernel"; do
+synthesize_guest="${YEET_KVM_SYNTHESIZE_GUEST:-$repo_root/scripts/synthesize-firecracker-runtime-test-guest.sh}"
+for helper in "$verify_runtime" "$download_runtime" "$download_guest" "$download_kernel" "$synthesize_guest"; do
 	[ -x "$helper" ] || fail "required integration helper is not executable: $helper"
 done
 
@@ -87,16 +89,20 @@ case_runner="${YEET_KVM_CASE_RUNNER:-$yeet_source/scripts/test-firecracker-runti
 [ -x "$case_runner" ] || fail "the exact Yeet commit does not provide the repository-owned runtime integration driver: $case_runner"
 
 runtime_dir="$work_dir/runtime"
+ubuntu_component_dir="$work_dir/ubuntu-component"
+nixos_component_dir="$work_dir/nixos-component"
 ubuntu_dir="$work_dir/ubuntu"
 nixos_dir="$work_dir/nixos"
 current_kernel_dir="$work_dir/current-kernel"
 previous_kernel_dir="$work_dir/previous-kernel"
 "$verify_runtime" "$runtime_release" >/dev/null
 "$download_runtime" "$runtime_release" "$runtime_manifest_sha256" "$runtime_dir"
-"$download_guest" ubuntu "$ubuntu_guest_release" "$ubuntu_dir"
-"$download_guest" nixos "$nixos_guest_release" "$nixos_dir"
+"$download_guest" "$ubuntu_guest_release" "$ubuntu_component_dir"
+"$download_guest" "$nixos_guest_release" "$nixos_component_dir"
 "$download_kernel" "$current_kernel_release" "$current_kernel_dir"
 "$download_kernel" "$previous_kernel_release" "$previous_kernel_dir"
+"$synthesize_guest" --guest-dir "$ubuntu_component_dir" --kernel-dir "$current_kernel_dir" --runtime-dir "$runtime_dir" --out-dir "$ubuntu_dir"
+"$synthesize_guest" --guest-dir "$nixos_component_dir" --kernel-dir "$current_kernel_dir" --runtime-dir "$runtime_dir" --out-dir "$nixos_dir"
 
 if [ "$test_mode" != 1 ]; then
 	version="$(jq -er '.upstream.version' "$runtime_dir/runtime-manifest.json")"

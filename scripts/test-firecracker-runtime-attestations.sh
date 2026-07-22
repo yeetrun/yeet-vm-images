@@ -7,7 +7,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 writer="$repo_root/scripts/write-firecracker-runtime-attestation.sh"
 publisher="$repo_root/scripts/publish-firecracker-runtime-attestation.sh"
 harness="$repo_root/scripts/test-firecracker-runtime-kvm.sh"
-guest_downloader="$repo_root/scripts/download-vm-image-release.sh"
+guest_downloader="$repo_root/scripts/download-published-guest-base.sh"
+guest_synthesizer="$repo_root/scripts/synthesize-firecracker-runtime-test-guest.sh"
 schema="$repo_root/schemas/firecracker-runtime-attestation.schema.json"
 fixture="$repo_root/scripts/testdata/runtime-attestation-integration.json"
 schema_validator="${CHECK_JSONSCHEMA:-$(command -v check-jsonschema || true)}"
@@ -20,7 +21,7 @@ trap cleanup EXIT
 fail() { echo "Firecracker runtime attestation test failed: $*" >&2; exit 1; }
 reject() { if "$@" >/dev/null 2>&1; then fail "command unexpectedly succeeded: $*"; fi; }
 
-for path in "$writer" "$publisher" "$harness" "$guest_downloader"; do
+for path in "$writer" "$publisher" "$harness" "$guest_downloader" "$guest_synthesizer"; do
 	[ -x "$path" ] || fail "missing executable ${path#"$repo_root/"}"
 done
 
@@ -32,10 +33,10 @@ jq -e '
     commit: "76543210fedcba9876543210fedcba9876543210"
   } and
   .artifacts == {
-    ubuntu_guest_release: "ubuntu-26.04-amd64-kernel-7.1.4-v29",
-    nixos_guest_release: "nixos-26.05-amd64-kernel-7.1.4-v29",
-    current_kernel_release: "kernel-linux-7.1.4-yeet-v1",
-    previous_kernel_release: "kernel-linux-7.1.3-yeet-v1"
+    ubuntu_guest_release: "guest-ubuntu-26.04-amd64-v2",
+    nixos_guest_release: "guest-nixos-26.05-amd64-v2",
+    current_kernel_release: "kernel-linux-7.1.4-yeet-v4",
+    previous_kernel_release: "kernel-linux-7.1.4-yeet-v3"
   } and
   (.matrix | keys == ["current_kernel", "custom_roots", "jailer_drop", "nixos", "previous_kernel", "raw", "ubuntu", "zfs"]) and
   all(.matrix[]; . == "passed")
@@ -65,10 +66,10 @@ written="$tmp_dir/written.json"
 	--source-commit 89abcdef0123456789abcdef0123456789abcdef \
 	--workflow-run 123456789 \
 	--yeet-commit 76543210fedcba9876543210fedcba9876543210 \
-	--ubuntu-guest-release ubuntu-26.04-amd64-kernel-7.1.4-v29 \
-	--nixos-guest-release nixos-26.05-amd64-kernel-7.1.4-v29 \
-	--current-kernel-release kernel-linux-7.1.4-yeet-v1 \
-	--previous-kernel-release kernel-linux-7.1.3-yeet-v1 \
+	--ubuntu-guest-release guest-ubuntu-26.04-amd64-v2 \
+	--nixos-guest-release guest-nixos-26.05-amd64-v2 \
+	--current-kernel-release kernel-linux-7.1.4-yeet-v4 \
+	--previous-kernel-release kernel-linux-7.1.4-yeet-v3 \
 	--matrix-file "$matrix" \
 	--started-at 2026-07-19T14:00:00Z \
 	--completed-at 2026-07-19T14:37:00Z \
@@ -78,19 +79,19 @@ cmp -s "$written" "$fixture" || fail "writer output differs from reviewed fixtur
 reject "$writer" --runtime-id firecracker-v1.16.1-yeet-v1 \
 	--manifest-sha256 "$(printf 'a%.0s' {1..64})" --source-commit 89abcdef0123456789abcdef0123456789abcdef \
 	--workflow-run 123456789 --yeet-commit 76543210fedcba9876543210fedcba9876543210 \
-	--ubuntu-guest-release ubuntu-26.04-amd64-kernel-7.1.4-v29 \
-	--nixos-guest-release nixos-26.05-amd64-kernel-7.1.4-v29 \
-	--current-kernel-release kernel-linux-7.1.4-yeet-v1 \
-	--previous-kernel-release kernel-linux-7.1.3-yeet-v1 \
+	--ubuntu-guest-release guest-ubuntu-26.04-amd64-v2 \
+	--nixos-guest-release guest-nixos-26.05-amd64-v2 \
+	--current-kernel-release kernel-linux-7.1.4-yeet-v4 \
+	--previous-kernel-release kernel-linux-7.1.4-yeet-v3 \
 	--matrix-file "$tmp_dir/missing-cell.json" --started-at 2026-07-19T14:00:00Z \
 	--completed-at 2026-07-19T14:37:00Z --out "$tmp_dir/rejected.json"
 reject "$writer" --runtime-id firecracker-v1.16.1-yeet-v1 \
 	--manifest-sha256 "$(printf 'a%.0s' {1..64})" --source-commit 89abcdef0123456789abcdef0123456789abcdef \
 	--workflow-run 123456789 --yeet-commit 76543210fedcba9876543210fedcba9876543210 \
-	--ubuntu-guest-release ubuntu-26.04-amd64-kernel-7.1.4-v29 \
-	--nixos-guest-release nixos-26.05-amd64-kernel-7.1.4-v29 \
-	--current-kernel-release kernel-linux-7.1.4-yeet-v1 \
-	--previous-kernel-release kernel-linux-7.1.3-yeet-v1 \
+	--ubuntu-guest-release guest-ubuntu-26.04-amd64-v2 \
+	--nixos-guest-release guest-nixos-26.05-amd64-v2 \
+	--current-kernel-release kernel-linux-7.1.4-yeet-v4 \
+	--previous-kernel-release kernel-linux-7.1.4-yeet-v3 \
 	--matrix-file "$matrix" --started-at 2026-07-19T14:37:00Z \
 	--completed-at 2026-07-19T14:00:00Z --out "$tmp_dir/rejected-time.json"
 
@@ -183,10 +184,10 @@ run_publisher() {
 		--manifest-sha256 "$(printf 'a%.0s' {1..64})" \
 		--target 89abcdef0123456789abcdef0123456789abcdef \
 		--run-id 123456789 --yeet-commit 76543210fedcba9876543210fedcba9876543210 \
-		--ubuntu-guest-release ubuntu-26.04-amd64-kernel-7.1.4-v29 \
-		--nixos-guest-release nixos-26.05-amd64-kernel-7.1.4-v29 \
-		--current-kernel-release kernel-linux-7.1.4-yeet-v1 \
-		--previous-kernel-release kernel-linux-7.1.3-yeet-v1 \
+		--ubuntu-guest-release guest-ubuntu-26.04-amd64-v2 \
+		--nixos-guest-release guest-nixos-26.05-amd64-v2 \
+		--current-kernel-release kernel-linux-7.1.4-yeet-v4 \
+		--previous-kernel-release kernel-linux-7.1.4-yeet-v3 \
 		--attestation "$attestation_file" --checksum "$checksum_file"
 }
 : >"$publish_log"; run_publisher success
@@ -206,19 +207,19 @@ reject "${publisher_env[@]}" GITHUB_JOB=unreviewed-job "$publisher" \
 	--runtime-id firecracker-v1.16.1-yeet-v1 --manifest-sha256 "$(printf 'a%.0s' {1..64})" \
 	--target 89abcdef0123456789abcdef0123456789abcdef --run-id 123456789 \
 	--yeet-commit 76543210fedcba9876543210fedcba9876543210 \
-	--ubuntu-guest-release ubuntu-26.04-amd64-kernel-7.1.4-v29 \
-	--nixos-guest-release nixos-26.05-amd64-kernel-7.1.4-v29 \
-	--current-kernel-release kernel-linux-7.1.4-yeet-v1 \
-	--previous-kernel-release kernel-linux-7.1.3-yeet-v1 \
+	--ubuntu-guest-release guest-ubuntu-26.04-amd64-v2 \
+	--nixos-guest-release guest-nixos-26.05-amd64-v2 \
+	--current-kernel-release kernel-linux-7.1.4-yeet-v4 \
+	--previous-kernel-release kernel-linux-7.1.4-yeet-v3 \
 	--attestation "$written" --checksum "$checksum"
 reject "${publisher_env[@]}" "$publisher" \
 	--runtime-id firecracker-v1.16.1-yeet-v1 --manifest-sha256 "$(printf 'a%.0s' {1..64})" \
 	--target 89abcdef0123456789abcdef0123456789abcdef --run-id 123456789 \
 	--yeet-commit 0000000000000000000000000000000000000000 \
-	--ubuntu-guest-release ubuntu-26.04-amd64-kernel-7.1.4-v29 \
-	--nixos-guest-release nixos-26.05-amd64-kernel-7.1.4-v29 \
-	--current-kernel-release kernel-linux-7.1.4-yeet-v1 \
-	--previous-kernel-release kernel-linux-7.1.3-yeet-v1 \
+	--ubuntu-guest-release guest-ubuntu-26.04-amd64-v2 \
+	--nixos-guest-release guest-nixos-26.05-amd64-v2 \
+	--current-kernel-release kernel-linux-7.1.4-yeet-v4 \
+	--previous-kernel-release kernel-linux-7.1.4-yeet-v3 \
 	--attestation "$written" --checksum "$checksum"
 
 # The KVM orchestration is fixture-driven here; live KVM execution is reserved
@@ -227,7 +228,7 @@ reject "${publisher_env[@]}" "$publisher" \
 bin_dir="$tmp_dir/bin"
 mkdir "$bin_dir"
 case_log="$tmp_dir/cases.log"
-for helper in verify-runtime download-runtime download-guest download-kernel; do
+for helper in verify-runtime download-runtime download-guest download-kernel synthesize-guest; do
 	printf '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%%s\\n" "$*" >>"$YEET_KVM_HELPER_LOG"\n' >"$bin_dir/$helper"
 	chmod +x "$bin_dir/$helper"
 done
@@ -238,10 +239,10 @@ reject env YEET_KVM_VERIFY_RUNTIME="$bin_dir/verify-runtime" \
 	"$harness" \
 	--runtime-release firecracker-v1.16.1-yeet-v1 \
 	--runtime-manifest-sha256 "$(printf 'a%.0s' {1..64})" \
-	--ubuntu-guest-release ubuntu-26.04-amd64-kernel-7.1.4-v29 \
-	--nixos-guest-release nixos-26.05-amd64-kernel-7.1.4-v29 \
-	--current-kernel-release kernel-linux-7.1.4-yeet-v1 \
-	--previous-kernel-release kernel-linux-7.1.3-yeet-v1 \
+	--ubuntu-guest-release guest-ubuntu-26.04-amd64-v2 \
+	--nixos-guest-release guest-nixos-26.05-amd64-v2 \
+	--current-kernel-release kernel-linux-7.1.4-yeet-v4 \
+	--previous-kernel-release kernel-linux-7.1.4-yeet-v3 \
 	--yeet-ref 76543210fedcba9876543210fedcba9876543210 \
 	--work-dir "$tmp_dir/kvm-rejected-work" --matrix-out "$tmp_dir/kvm-rejected-matrix.json"
 env YEET_RUNTIME_KVM_TEST_MODE=1 \
@@ -249,18 +250,20 @@ env YEET_RUNTIME_KVM_TEST_MODE=1 \
 	YEET_KVM_DOWNLOAD_RUNTIME="$bin_dir/download-runtime" \
 	YEET_KVM_DOWNLOAD_GUEST="$bin_dir/download-guest" \
 	YEET_KVM_DOWNLOAD_KERNEL="$bin_dir/download-kernel" \
+	YEET_KVM_SYNTHESIZE_GUEST="$bin_dir/synthesize-guest" \
 	YEET_KVM_CASE_RUNNER="$bin_dir/run-case" YEET_KVM_CASE_LOG="$case_log" \
 	YEET_KVM_HELPER_LOG="$tmp_dir/helpers.log" \
 	"$harness" \
 	--runtime-release firecracker-v1.16.1-yeet-v1 \
 	--runtime-manifest-sha256 "$(printf 'a%.0s' {1..64})" \
-	--ubuntu-guest-release ubuntu-26.04-amd64-kernel-7.1.4-v29 \
-	--nixos-guest-release nixos-26.05-amd64-kernel-7.1.4-v29 \
-	--current-kernel-release kernel-linux-7.1.4-yeet-v1 \
-	--previous-kernel-release kernel-linux-7.1.3-yeet-v1 \
+	--ubuntu-guest-release guest-ubuntu-26.04-amd64-v2 \
+	--nixos-guest-release guest-nixos-26.05-amd64-v2 \
+	--current-kernel-release kernel-linux-7.1.4-yeet-v4 \
+	--previous-kernel-release kernel-linux-7.1.4-yeet-v3 \
 	--yeet-ref 76543210fedcba9876543210fedcba9876543210 \
 	--work-dir "$tmp_dir/kvm-work" --matrix-out "$matrix_out"
 [ "$(wc -l <"$case_log" | tr -d ' ')" = 7 ] || fail "KVM harness did not run seven representative scenarios"
+[ "$(grep -Fc -- "--guest-dir" "$tmp_dir/helpers.log")" = 2 ] || fail "KVM harness did not synthesize exactly two component guests"
 for scenario in ubuntu-current nixos-current previous-kernel raw-storage zfs-storage custom-roots jailer-drop; do
 	grep -Fq -- "--scenario $scenario" "$case_log" || fail "KVM harness omitted $scenario"
 done

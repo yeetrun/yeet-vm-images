@@ -77,7 +77,11 @@ if jq -e "$kernel_filter" "$tmp_dir/kernel-wrong-release.json" >/dev/null 2>&1; 
 fi
 
 guest_entry='{"guest_base_id":"guest-ubuntu-26.04-amd64-v1","os":"ubuntu","os_version":"26.04","architecture":"amd64","manifest_url":"https://github.com/yeetrun/yeet-vm-images/releases/download/guest-ubuntu-26.04-amd64-v1/guest-manifest.json","manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
-jq --argjson entry "$guest_entry" '.guest_bases = [$entry] | .channels["ubuntu-26.04-amd64"].candidate = {guest_base_id:$entry.guest_base_id, manifest_sha256:$entry.manifest_sha256}' "$repo_root/guest-catalog.json" >"$tmp_dir/guest-valid.json"
+jq --argjson entry "$guest_entry" '
+  .guest_bases = [$entry] |
+  .channels["ubuntu-26.04-amd64"] = {stable:null,candidate:{guest_base_id:$entry.guest_base_id,manifest_sha256:$entry.manifest_sha256}} |
+  .channels["nixos-26.05-amd64"] = {stable:null,candidate:null}
+' "$repo_root/guest-catalog.json" >"$tmp_dir/guest-valid.json"
 "$verifier" "$repo_root/catalog.json" "$tmp_dir/guest-valid.json" "$repo_root/kernel-catalog.json"
 jq '.channels["ubuntu-26.04-amd64"].candidate.manifest_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$tmp_dir/guest-valid.json" >"$tmp_dir/guest-dangling.json"
 if "$verifier" "$repo_root/catalog.json" "$tmp_dir/guest-dangling.json" "$repo_root/kernel-catalog.json" >/dev/null 2>&1; then

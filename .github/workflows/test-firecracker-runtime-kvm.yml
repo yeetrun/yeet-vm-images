@@ -14,11 +14,11 @@ on:
         required: true
         type: string
       ubuntu_guest_release:
-        description: Exact immutable Ubuntu guest release ID.
+        description: Exact immutable Ubuntu guest-base release ID.
         required: true
         type: string
       nixos_guest_release:
-        description: Exact immutable NixOS guest release ID.
+        description: Exact immutable NixOS guest-base release ID.
         required: true
         type: string
       current_kernel_release:
@@ -105,8 +105,8 @@ jobs:
               if .release_event.enabled == false
               then all(.release_event | del(.enabled)[]; . == null)
               else .release_event.enabled == true and
-                (.release_event.ubuntu_guest_release | test("^ubuntu-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
-                (.release_event.nixos_guest_release | test("^nixos-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
+                (.release_event.ubuntu_guest_release | test("^guest-ubuntu-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$")) and
+                (.release_event.nixos_guest_release | test("^guest-nixos-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$")) and
                 (.release_event.current_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
                 (.release_event.previous_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
                 (.release_event.yeet_ref | test("^[0-9a-f]{40}$"))
@@ -146,8 +146,8 @@ jobs:
           fi
           [[ "$runtime_id" =~ ^firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*$ ]] || exit 1
           [[ "$manifest_sha256" =~ ^[0-9a-f]{64}$ ]] || exit 1
-          [[ "$ubuntu_guest_release" =~ ^ubuntu-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$ ]] || exit 1
-          [[ "$nixos_guest_release" =~ ^nixos-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$ ]] || exit 1
+          [[ "$ubuntu_guest_release" =~ ^guest-ubuntu-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$ ]] || exit 1
+          [[ "$nixos_guest_release" =~ ^guest-nixos-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$ ]] || exit 1
           [[ "$current_kernel_release" =~ ^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$ ]] || exit 1
           [[ "$previous_kernel_release" =~ ^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$ ]] || exit 1
           [[ "$yeet_ref" =~ ^[0-9a-f]{40}$ ]] || exit 1

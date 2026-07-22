@@ -196,7 +196,9 @@ require_text "$integration" 'permission-administration: read' "integration token
 reject_text "$integration" 'permission-pull-requests:' "integration token has unnecessary pull-request permission"
 [ "$(grep -Fc 'steps.integration-app-token.outputs.token' "$integration")" = 1 ] || fail "integration App token is exposed outside the publication step"
 require_text "$integration" 'scripts/test-firecracker-runtime-kvm.sh' "integration KVM harness is missing"
+require_text "$repo_root/scripts/test-firecracker-runtime-kvm.sh" 'scripts/download-published-guest-base.sh' "integration harness does not use the immutable published guest-base downloader"
 require_text "$repo_root/scripts/test-firecracker-runtime-kvm.sh" 'scripts/download-published-kernel-release.sh' "integration harness does not use the immutable published-kernel downloader"
+require_text "$repo_root/scripts/test-firecracker-runtime-kvm.sh" 'scripts/synthesize-firecracker-runtime-test-guest.sh' "integration harness does not build a hash-bound component test guest"
 require_text "$integration" 'scripts/write-firecracker-runtime-attestation.sh' "integration attestation writer is missing"
 require_text "$integration" 'scripts/publish-firecracker-runtime-attestation.sh' "integration attestation publisher is missing"
 require_text "$integration" 'YEET_INTEGRATION_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}' "integration workflow repository identity is missing"
@@ -240,12 +242,12 @@ activation_filter='keys == ["release_event", "schema_version"] and .schema_versi
   (.release_event | keys == ["current_kernel_release", "enabled", "nixos_guest_release", "previous_kernel_release", "ubuntu_guest_release", "yeet_ref"]) and
   if .release_event.enabled == false then all(.release_event | del(.enabled)[]; . == null)
   else .release_event.enabled == true and
-    (.release_event.ubuntu_guest_release | test("^ubuntu-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
-    (.release_event.nixos_guest_release | test("^nixos-[0-9]+[.][0-9]+-amd64-(kernel-[0-9]+[.][0-9]+([.][0-9]+)*-)?v[1-9][0-9]*$")) and
+    (.release_event.ubuntu_guest_release | test("^guest-ubuntu-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$")) and
+    (.release_event.nixos_guest_release | test("^guest-nixos-[0-9]+[.][0-9]+-amd64-v[1-9][0-9]*$")) and
     (.release_event.current_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
     (.release_event.previous_kernel_release | test("^kernel-linux-[0-9]+[.][0-9]+([.][0-9]+)*-yeet-v[1-9][0-9]*$")) and
     (.release_event.yeet_ref | test("^[0-9a-f]{40}$")) end'
-jq '.release_event={enabled:true,ubuntu_guest_release:"ubuntu-26.04-amd64-kernel-7.1.4-v29",nixos_guest_release:"nixos-26.05-amd64-kernel-7.1.4-v29",current_kernel_release:"kernel-linux-7.1.4-yeet-v1",previous_kernel_release:"kernel-linux-7.1.3-yeet-v1",yeet_ref:"76543210fedcba9876543210fedcba9876543210"}' "$integration_gate" >"$tmp_dir/enabled-integration.json"
+jq '.release_event={enabled:true,ubuntu_guest_release:"guest-ubuntu-26.04-amd64-v2",nixos_guest_release:"guest-nixos-26.05-amd64-v2",current_kernel_release:"kernel-linux-7.1.4-yeet-v4",previous_kernel_release:"kernel-linux-7.1.4-yeet-v3",yeet_ref:"76543210fedcba9876543210fedcba9876543210"}' "$integration_gate" >"$tmp_dir/enabled-integration.json"
 jq -e "$activation_filter" "$tmp_dir/enabled-integration.json" >/dev/null || fail "fully pinned activation gate was rejected"
 for mutation in partial-disabled partial-enabled latest-enabled unknown-enabled; do
 	case "$mutation" in

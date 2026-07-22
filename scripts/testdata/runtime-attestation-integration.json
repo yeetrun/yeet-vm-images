@@ -19,10 +19,10 @@
     "commit": "76543210fedcba9876543210fedcba9876543210"
   },
   "artifacts": {
-    "ubuntu_guest_release": "ubuntu-26.04-amd64-kernel-7.1.4-v29",
-    "nixos_guest_release": "nixos-26.05-amd64-kernel-7.1.4-v29",
-    "current_kernel_release": "kernel-linux-7.1.4-yeet-v1",
-    "previous_kernel_release": "kernel-linux-7.1.3-yeet-v1"
+    "ubuntu_guest_release": "guest-ubuntu-26.04-amd64-v2",
+    "nixos_guest_release": "guest-nixos-26.05-amd64-v2",
+    "current_kernel_release": "kernel-linux-7.1.4-yeet-v4",
+    "previous_kernel_release": "kernel-linux-7.1.4-yeet-v3"
   },
   "matrix": {
     "ubuntu": "passed",

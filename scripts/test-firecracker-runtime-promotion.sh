@@ -24,7 +24,7 @@ jq --arg runtime "$runtime_id" --arg sha "$manifest_sha" --arg source "$source_c
   .subject={runtime_id:$runtime,manifest_sha256:$sha} |
   .source={repository:"yeetrun/yeet-vm-images",commit:$source,workflow_run:"123456789"} |
   .tested_yeet={repository:"yeetrun/yeet",commit:$yeet} |
-  .artifacts={ubuntu_guest_release:"ubuntu-26.04-amd64-kernel-7.1.4-v29",nixos_guest_release:"nixos-26.05-amd64-kernel-7.1.4-v29",current_kernel_release:"kernel-linux-7.1.4-yeet-v1",previous_kernel_release:"kernel-linux-7.1.3-yeet-v1"}
+  .artifacts={ubuntu_guest_release:"guest-ubuntu-26.04-amd64-v2",nixos_guest_release:"guest-nixos-26.05-amd64-v2",current_kernel_release:"kernel-linux-7.1.4-yeet-v4",previous_kernel_release:"kernel-linux-7.1.4-yeet-v3"}
 ' "$repo_root/scripts/testdata/runtime-attestation-integration.json" >"$fixtures/runtime-attestation.json"
 attestation_sha="$(sha256sum "$fixtures/runtime-attestation.json"|awk '{print $1}')"
 printf '%s  runtime-attestation.json\n' "$attestation_sha" >"$fixtures/runtime-attestation.sha256"

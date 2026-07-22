@@ -248,8 +248,8 @@ serialize independent administrator actions.
 
 Runtime integration is tracked separately from candidate publication. The
 `test-firecracker-runtime-kvm.yml` workflow accepts only an exact runtime ID and
-manifest digest, exact immutable Ubuntu/NixOS guest and current/previous kernel
-release IDs, and a full Yeet commit. It checks out that Yeet commit and requires
+manifest digest, exact immutable Ubuntu/NixOS guest-base and current/previous
+kernel release IDs, and a full Yeet commit. It checks out that Yeet commit and requires
 its repository-owned `scripts/test-firecracker-runtime-integration.sh` driver;
 there is no runner-installed helper or direct-Firecracker fallback. The driver
 lands with Catch runtime management, so `runtime-integration.json` is currently
@@ -263,7 +263,9 @@ A passed run publishes exactly `runtime-attestation.json` and
 `runtime-attestation.sha256` in a new immutable
 `<runtime-id>-integration-<run-id>` release. The attestation binds the runtime
 digest, harness commit, tested Yeet commit, four immutable guest/kernel IDs, and
-the passed evidence dimensions. Publication uses the protected
+the passed evidence dimensions. The harness verifies the component releases,
+assembles a disposable hash-bound compatibility bundle for the existing Yeet
+integration driver, and never publishes that bundle. Publication uses the protected
 `firecracker-runtime-integration-publish` Environment and a repository-scoped
 App token only for the immutable release transaction. A partial tag or draft is
 preserved; recovery starts a new workflow run and therefore uses a new run ID.
