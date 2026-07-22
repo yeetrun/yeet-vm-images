@@ -219,7 +219,7 @@ Publication emits GitHub's native `release: published` event for the Task 5
 integration workflow; it does not send a second dispatch API request. The
 workflow does not edit `runtime-catalog.json`.
 
-Runtime publication requires two protected GitHub Environments:
+Runtime publication and validation use protected GitHub Environments:
 
 - `firecracker-runtime-publish` protects every candidate publication and holds
   the environment-scoped `YEET_RUNTIME_GITHUB_APP_CLIENT_ID` variable and
@@ -227,6 +227,14 @@ Runtime publication requires two protected GitHub Environments:
 - `firecracker-runtime-overrides` adds a separate approval when an unsigned tag
   or signer rotation is explicitly requested. The normal
   `firecracker-runtime-publish` protection still applies afterward.
+- `firecracker-runtime-integration-publish` holds the same repository-scoped
+  App credential only for publishing passed integration evidence.
+- `firecracker-runtime-canary` protects the ordinary 24-hour canary;
+  `firecracker-runtime-emergency` separately approves a shortened soak and
+  requires an attested approver and reason.
+- `firecracker-runtime-canary-publish` holds the App credential only for the
+  immutable canary-evidence release, while `firecracker-runtime-promotion`
+  protects catalog promotion and revocation pull requests.
 
 The GitHub App must be installed only on `yeetrun/yeet-vm-images` and grant the
 repository permissions `Administration: read` and `Contents: write`. The
@@ -274,9 +282,20 @@ preserved; recovery starts a new workflow run and therefore uses a new run ID.
 Candidate listing is also deliberate. `promote-firecracker-runtime.yml`
 re-verifies the immutable runtime and integration evidence, changes only
 `runtime-catalog.json`, and opens `promote/<runtime-id>/candidate` as a reviewed
-pull request. It never pushes to `main`, force-pushes, merges the PR, or changes
-the stable pointer. The commit that adds this dormant machinery does not enable
-credentials, protected Environments, a workflow run, or live KVM validation.
+pull request. Stable promotion requires that same exact candidate plus an
+immutable passed canary attestation and opens `promote/<runtime-id>/stable`.
+The canary runs five complete KVM matrices, recording at least 25 boots, 10
+natural reboots, five disk restore cycles, both kernels, both guests, raw and
+ZFS storage, custom roots, jailer privilege drop, runtime trial/fallback/
+rollback, Catch restart, and recovery. Its default soak is 24 hours; a shorter
+run must pass the separate emergency Environment and records the approver and
+reason in the closed attestation contract.
+
+`revoke-firecracker-runtime.yml` creates a reviewed catalog-only PR that clears
+the runtime from active channels, retains the immutable entry, marks it
+revoked, and appends one digest-qualified reason and timestamp. A revoked
+runtime ID cannot be promoted again. Promotion and revocation never push to
+`main`, force-push, auto-merge, delete releases, or rewrite immutable evidence.
 
 Detailed workflow inputs live in `.github/workflows/`. The README describes
 the release model; the workflow files are the source of truth for dispatch

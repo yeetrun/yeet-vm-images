@@ -7,6 +7,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build="$repo_root/.github/workflows/build-firecracker-runtime.yml"
 integration="$repo_root/.github/workflows/test-firecracker-runtime-kvm.yml"
 promotion="$repo_root/.github/workflows/promote-firecracker-runtime.yml"
+canary="$repo_root/.github/workflows/canary-firecracker-runtime.yml"
+revocation="$repo_root/.github/workflows/revoke-firecracker-runtime.yml"
 integration_gate="$repo_root/runtime-integration.json"
 readme="$repo_root/README.md"
 published_kernel_downloader="$repo_root/scripts/download-published-kernel-release.sh"
@@ -43,6 +45,8 @@ reject_text() {
 require_file "$build"
 require_file "$integration"
 require_file "$promotion"
+require_file "$canary"
+require_file "$revocation"
 require_file "$integration_gate"
 require_file "$readme"
 require_file "$published_kernel_downloader"
@@ -215,13 +219,13 @@ require_text "$integration" 'if .release_event.enabled == false' "integration wo
 require_text "$integration" 'then all(.release_event | del(.enabled)[]; . == null)' "disabled activation gate could expose partial values"
 require_text "$integration" 'else .release_event.enabled == true' "enabled activation gate is not explicit"
 
-# Candidate promotion is a reviewed pull request from a fresh main checkout.
+# Candidate and stable promotion are reviewed pull requests from fresh main checkouts.
 require_text "$promotion" '  workflow_dispatch:' "promotion manual trigger is missing"
-for input in runtime_id manifest_sha256 integration_attestation_url integration_attestation_sha256; do
+for input in channel runtime_id manifest_sha256 integration_attestation_url integration_attestation_sha256 canary_attestation_url canary_attestation_sha256; do
 	require_text "$promotion" "      $input:" "promotion workflow input is missing: $input"
 done
 require_text "$promotion" '    environment: firecracker-runtime-promotion' "promotion environment is missing"
-require_text "$promotion" 'group: firecracker-runtime-promotion-${{ inputs.runtime_id }}-candidate' "per-runtime promotion concurrency is missing"
+require_text "$promotion" 'group: firecracker-runtime-promotion-${{ inputs.runtime_id }}-${{ inputs.channel }}' "per-runtime promotion concurrency is missing"
 require_text "$promotion" 'cancel-in-progress: false' "promotion cancellation policy differs"
 require_text "$promotion" $'permissions:\n  contents: read' "promotion default token is not contents:read"
 require_text "$promotion" "uses: actions/create-github-app-token@$app_token_sha" "promotion App-token pin differs"
@@ -235,12 +239,12 @@ require_text "$promotion" 'YEET_PROMOTION_WORKFLOW_REPOSITORY: ${{ job.workflow_
 require_text "$promotion" 'YEET_PROMOTION_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}' "promotion workflow path identity is missing"
 require_text "$promotion" 'YEET_PROMOTION_WORKFLOW_REF: ${{ job.workflow_ref }}' "promotion workflow ref identity is missing"
 require_text "$promotion" 'YEET_PROMOTION_WORKFLOW_SHA: ${{ job.workflow_sha }}' "promotion workflow SHA identity is missing"
-require_text "$promotion" '[ "${GITHUB_JOB:-}" = promote-candidate ]' "promotion job ID is not checked"
+require_text "$promotion" '[ "${GITHUB_JOB:-}" = promote-runtime ]' "promotion job ID is not checked"
 require_text "$promotion" 'repository=yeetrun/yeet-vm-images' "promotion repository identity is not checked"
 require_text "$promotion" 'workflow_ref="$repository/.github/workflows/promote-firecracker-runtime.yml@refs/heads/main"' "promotion main-only workflow ref is not checked"
 require_text "$promotion" '[ "$(git rev-parse HEAD)" = "$YEET_PROMOTION_WORKFLOW_SHA" ]' "promotion checkout is not bound to workflow SHA"
 require_text "$promotion" '[ "$(git rev-parse origin/main)" = "$YEET_PROMOTION_WORKFLOW_SHA" ]' "promotion does not fail when main advances beyond workflow SHA"
-require_text "$promotion" 'branch="promote/$RUNTIME_ID/candidate"' "promotion branch name differs"
+require_text "$promotion" 'branch="promote/$RUNTIME_ID/$CHANNEL"' "promotion branch name differs"
 require_text "$promotion" 'git push origin "HEAD:refs/heads/$branch"' "promotion does not use a non-force push"
 reject_text "$promotion" '--force' "promotion contains a force push"
 reject_text "$promotion" 'gh pr merge' "promotion auto-merges"
@@ -260,7 +264,7 @@ required = [
     "          YEET_PROMOTION_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}\n",
     "          YEET_PROMOTION_WORKFLOW_REF: ${{ job.workflow_ref }}\n",
     "          YEET_PROMOTION_WORKFLOW_SHA: ${{ job.workflow_sha }}\n",
-    '          [ "${GITHUB_JOB:-}" = promote-candidate ]\n',
+    '          [ "${GITHUB_JOB:-}" = promote-runtime ]\n',
     "          repository=yeetrun/yeet-vm-images\n",
     '          workflow_ref="$repository/.github/workflows/promote-firecracker-runtime.yml@refs/heads/main"\n',
     '          [ "${GITHUB_WORKFLOW_REF:-}" = "$workflow_ref" ]\n',
@@ -291,7 +295,7 @@ sed -i.bak 's#repository=yeetrun/yeet-vm-images#repository=other/repository#' "$
 cp "$promotion" "$promotion_mutations/path.yml"
 sed -i.bak 's#YEET_PROMOTION_WORKFLOW_FILE_PATH" = .github/workflows/promote-firecracker-runtime.yml#YEET_PROMOTION_WORKFLOW_FILE_PATH" = .github/workflows/other.yml#' "$promotion_mutations/path.yml" && rm "$promotion_mutations/path.yml.bak"
 cp "$promotion" "$promotion_mutations/job.yml"
-sed -i.bak 's#GITHUB_JOB:-}" = promote-candidate#GITHUB_JOB:-}" = other-job#' "$promotion_mutations/job.yml" && rm "$promotion_mutations/job.yml.bak"
+sed -i.bak 's#GITHUB_JOB:-}" = promote-runtime#GITHUB_JOB:-}" = other-job#' "$promotion_mutations/job.yml" && rm "$promotion_mutations/job.yml.bak"
 cp "$promotion" "$promotion_mutations/job-context.yml"
 sed -i.bak 's#YEET_PROMOTION_WORKFLOW_REPOSITORY: \${{ job.workflow_repository }}#YEET_PROMOTION_WORKFLOW_REPOSITORY: ${{ github.repository }}#' "$promotion_mutations/job-context.yml" && rm "$promotion_mutations/job-context.yml.bak"
 cp "$promotion" "$promotion_mutations/file-context.yml"
@@ -306,10 +310,37 @@ for mutation in "$promotion_mutations"/*.yml; do
 	if validate_promotion_identity "$mutation" >/dev/null 2>&1; then fail "promotion identity mutation was accepted: $(basename "$mutation")"; fi
 done
 
+# Canary work is manual, exact-input, KVM-only, and protected. A shortened
+# soak changes the environment as well as the signed evidence.
+require_text "$canary" '  workflow_dispatch:' "canary manual trigger is missing"
+for input in runtime_id manifest_sha256 ubuntu_guest_release nixos_guest_release current_kernel_release previous_kernel_release yeet_ref shorten_soak emergency_approver emergency_reason; do
+	require_text "$canary" "      $input:" "canary workflow input is missing: $input"
+done
+require_text "$canary" 'runs-on: [self-hosted, linux, x64, kvm, yeet-runtime-canary]' "canary runner labels differ"
+require_text "$canary" "name: \${{ inputs.shorten_soak && 'firecracker-runtime-emergency' || 'firecracker-runtime-canary' }}" "canary protected environment selection differs"
+require_text "$canary" 'environment: firecracker-runtime-canary-publish' "canary publisher environment is missing"
+require_text "$canary" 'scripts/test-firecracker-runtime-canary.sh' "canary KVM harness is missing"
+require_text "$canary" 'scripts/write-firecracker-runtime-canary-attestation.sh' "canary attestation writer is missing"
+require_text "$canary" 'scripts/publish-firecracker-runtime-attestation.sh --kind canary' "canary immutable publisher is missing"
+require_text "$canary" 'target=$((started_epoch + 86400))' "default 24-hour canary soak is missing"
+require_text "$canary" 'permission-administration: read' "canary publisher lacks immutable-release settings read"
+require_text "$canary" 'permission-contents: write' "canary publisher lacks Contents:write"
+reject_text "$canary" 'gh pr merge' "canary workflow merges a promotion"
+
+# Revocation retains immutable history and opens a reviewed catalog-only PR.
+require_text "$revocation" '  workflow_dispatch:' "revocation manual trigger is missing"
+require_text "$revocation" '    environment: firecracker-runtime-promotion' "revocation environment is missing"
+require_text "$revocation" 'scripts/revoke-firecracker-runtime.sh' "revocation script is not used"
+require_text "$revocation" 'branch="revoke/$RUNTIME_ID/$GITHUB_RUN_ID"' "revocation branch is not unique"
+require_text "$revocation" 'git diff --name-only HEAD^ HEAD' "revocation does not verify its committed path"
+reject_text "$revocation" '--force' "revocation contains a force push"
+reject_text "$revocation" 'gh pr merge' "revocation auto-merges"
+
 # The manual bootstrap is the direct build/publish workflow. No integration or
 # promotion workflow may invoke it as a nested write path.
 reject_text "$integration" 'build-firecracker-runtime.yml' "integration calls the build workflow directly"
 reject_text "$promotion" 'build-firecracker-runtime.yml' "promotion calls the build workflow directly"
+reject_text "$canary" 'build-firecracker-runtime.yml' "canary calls the build workflow directly"
 publishers="$(rg -l --fixed-strings 'scripts/publish-firecracker-runtime-assets.sh' "$repo_root/.github/workflows" || true)"
 [ "$publishers" = "$build" ] || fail "runtime publisher has an alternate workflow call path"
 
@@ -325,14 +356,14 @@ jq -e '.next_release == "firecracker-v1.16.1-yeet-v2"' <<<"$allocation_fixture" 
 jq -e '.current_release == ""' <<<"$published_fixture" >/dev/null || fail "tag-only/draft v1 was treated as a published no-op"
 
 # Every external action is full-SHA pinned.
-python3 - "$build" "$integration" "$promotion" "$checkout_sha" <<'PY'
+python3 - "$build" "$integration" "$promotion" "$canary" "$revocation" "$checkout_sha" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-checkout_sha = sys.argv[4]
+checkout_sha = sys.argv[6]
 checkout_count = 0
-for raw_path in sys.argv[1:4]:
+for raw_path in sys.argv[1:6]:
     path = Path(raw_path)
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         match = re.match(r"\s*-?\s*uses:\s*(\S+)\s*$", line)
@@ -346,8 +377,8 @@ for raw_path in sys.argv[1:4]:
             checkout_count += 1
             if action.group(2) != checkout_sha:
                 raise SystemExit(f"{path}:{number}: unexpected actions/checkout pin")
-if checkout_count != 7:
-    raise SystemExit(f"expected exactly seven pinned actions/checkout uses, found {checkout_count}")
+if checkout_count != 12:
+    raise SystemExit(f"expected exactly twelve pinned actions/checkout uses, found {checkout_count}")
 PY
 
 # No mutable alias, overwrite, destructive cleanup, or catalog mutation path.

@@ -4,10 +4,12 @@ export LC_ALL=C
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 promoter="$repo_root/scripts/promote-firecracker-runtime.sh"
+revoker="$repo_root/scripts/revoke-firecracker-runtime.sh"
 schema_validator="${CHECK_JSONSCHEMA:-$(command -v check-jsonschema || true)}"
 if [ -z "$schema_validator" ] && command -v mise >/dev/null 2>&1; then schema_validator="$(mise which check-jsonschema 2>/dev/null || true)"; fi
 [ -n "$schema_validator" ] && [ -x "$schema_validator" ] || { echo "missing check-jsonschema" >&2; exit 1; }
 [ -x "$promoter" ] || { echo "missing executable scripts/promote-firecracker-runtime.sh" >&2; exit 1; }
+[ -x "$revoker" ] || { echo "missing executable scripts/revoke-firecracker-runtime.sh" >&2; exit 1; }
 tmp_dir="$(mktemp -d)"
 cleanup() { rm -rf "$tmp_dir"; }
 trap cleanup EXIT
@@ -28,6 +30,14 @@ jq --arg runtime "$runtime_id" --arg sha "$manifest_sha" --arg source "$source_c
 ' "$repo_root/scripts/testdata/runtime-attestation-integration.json" >"$fixtures/runtime-attestation.json"
 attestation_sha="$(sha256sum "$fixtures/runtime-attestation.json"|awk '{print $1}')"
 printf '%s  runtime-attestation.json\n' "$attestation_sha" >"$fixtures/runtime-attestation.sha256"
+jq --arg runtime "$runtime_id" --arg sha "$manifest_sha" --arg source "$source_commit" --arg yeet "$yeet_commit" '
+  .subject={runtime_id:$runtime,manifest_sha256:$sha} |
+  .source={repository:"yeetrun/yeet-vm-images",commit:$source,workflow_run:"123456790"} |
+  .tested_yeet={repository:"yeetrun/yeet",commit:$yeet} |
+  .artifacts={ubuntu_guest_release:"guest-ubuntu-26.04-amd64-v2",nixos_guest_release:"guest-nixos-26.05-amd64-v2",current_kernel_release:"kernel-linux-7.1.4-yeet-v4",previous_kernel_release:"kernel-linux-7.1.4-yeet-v3"}
+' "$repo_root/scripts/testdata/runtime-attestation-canary.json" >"$fixtures/runtime-attestation-canary.json"
+canary_sha="$(sha256sum "$fixtures/runtime-attestation-canary.json"|awk '{print $1}')"
+printf '%s  runtime-attestation.json\n' "$canary_sha" >"$fixtures/runtime-attestation-canary.sha256"
 
 cat >"$bin_dir/verify-runtime" <<'MOCK_VERIFY'
 #!/usr/bin/env bash
@@ -42,11 +52,15 @@ cat >"$bin_dir/gh" <<'MOCK_GH'
 #!/usr/bin/env bash
 set -euo pipefail
 [ "$1" = api ] || exit 90; shift
-scenario="${YEET_PROMOTION_SCENARIO:-success}" tag=firecracker-v1.16.1-yeet-v1-integration-123456789
-if [ "$1" = "repos/yeetrun/yeet-vm-images/releases/tags/$tag" ]; then
+scenario="${YEET_PROMOTION_SCENARIO:-success}"
+integration_tag=firecracker-v1.16.1-yeet-v1-integration-123456789
+canary_tag=firecracker-v1.16.1-yeet-v1-canary-123456790
+if [ "$1" = "repos/yeetrun/yeet-vm-images/releases/tags/$integration_tag" ] || [ "$1" = "repos/yeetrun/yeet-vm-images/releases/tags/$canary_tag" ]; then
+	tag="${1##*/}"; kind=integration; [ "$tag" = "$integration_tag" ] || kind=canary
 	assets=""; id=500
 	for name in runtime-attestation.json runtime-attestation.sha256; do
-		id=$((id+1)); path="$YEET_PROMOTION_FIXTURES/$name"; size="$(wc -c <"$path"|tr -d ' ')"; digest="sha256:$(sha256sum "$path"|awk '{print $1}')"
+		id=$((id+1)); fixture_name="$name"; [ "$kind" = integration ] || fixture_name="runtime-attestation-canary.${name##*.}"
+		path="$YEET_PROMOTION_FIXTURES/$fixture_name"; size="$(wc -c <"$path"|tr -d ' ')"; digest="sha256:$(sha256sum "$path"|awk '{print $1}')"
 		url="https://api.github.com/repos/yeetrun/yeet-vm-images/releases/assets/$id"; browser="https://github.com/yeetrun/yeet-vm-images/releases/download/$tag/$name"
 		[ "$scenario" != attestation-metadata-digest ] || { [ "$name" != runtime-attestation.json ] || digest="sha256:$(printf '0%.0s' {1..64})"; }
 		[ "$scenario" != checksum-metadata-digest ] || { [ "$name" != runtime-attestation.sha256 ] || digest="sha256:$(printf '0%.0s' {1..64})"; }
@@ -58,7 +72,7 @@ if [ "$1" = "repos/yeetrun/yeet-vm-images/releases/tags/$tag" ]; then
 "
 	immutable=true; [ "$scenario" != mutable-release ] || immutable=false
 	jq -n --arg tag "$tag" --argjson immutable "$immutable" --argjson assets "$(jq -sc . <<<"$assets")" '{tag_name:$tag,draft:false,prerelease:false,immutable:$immutable,published_at:"2026-07-19T20:00:00Z",assets:$assets}'
-elif [ "$1" = "repos/yeetrun/yeet-vm-images/git/ref/tags/$tag" ]; then
+elif [ "$1" = "repos/yeetrun/yeet-vm-images/git/ref/tags/$integration_tag" ] || [ "$1" = "repos/yeetrun/yeet-vm-images/git/ref/tags/$canary_tag" ]; then
 	sha=89abcdef0123456789abcdef0123456789abcdef; [ "$scenario" != wrong-tag-target ] || sha=0000000000000000000000000000000000000000
 	jq -n --arg sha "$sha" '{object:{type:"commit",sha:$sha}}'
 else
@@ -80,7 +94,9 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 [ -n "$output" ] && [ "$write_out" = '%{url_effective}' ] || exit 90
-name="${url##*/}"; cp "$YEET_PROMOTION_FIXTURES/$name" "$output"
+name="${url##*/}"; fixture_name="$name"
+case "$url" in *-canary-*) fixture_name="runtime-attestation-canary.${name##*.}" ;; esac
+cp "$YEET_PROMOTION_FIXTURES/$fixture_name" "$output"
 [ "${YEET_PROMOTION_SCENARIO:-}" != wrong-downloaded-size ] || printf extra >>"$output"
 if [ "${YEET_PROMOTION_SCENARIO:-}" = unexpected-host ]; then printf 'https://example.invalid/%s' "$name"
 else printf 'https://release-assets.githubusercontent.com/%s' "$name"; fi
@@ -118,6 +134,18 @@ promote() {
 		--integration-attestation-sha256 "$attestation_sha" --catalog-in "$input" --catalog-out "$output"
 }
 
+promote_stable() {
+	local input="$1" output="$2" scenario="${3:-success}"
+	YEET_RUNTIME_TEST_MODE=1 YEET_PROMOTION_SCENARIO="$scenario" YEET_PROMOTION_FIXTURES="$fixtures" \
+		YEET_PROMOTION_MANIFEST_SHA="$manifest_sha" YEET_PROMOTION_VERIFY_RUNTIME="$bin_dir/verify-runtime" \
+		PATH="$bin_dir:$PATH" CHECK_JSONSCHEMA="$schema_validator" \
+		"$promoter" --channel stable --runtime-id "$runtime_id" --manifest-sha256 "$manifest_sha" \
+		--integration-attestation-url "https://github.com/yeetrun/yeet-vm-images/releases/download/$runtime_id-integration-123456789/runtime-attestation.json" \
+		--integration-attestation-sha256 "$attestation_sha" \
+		--canary-attestation-url "https://github.com/yeetrun/yeet-vm-images/releases/download/$runtime_id-canary-123456790/runtime-attestation.json" \
+		--canary-attestation-sha256 "$canary_sha" --catalog-in "$input" --catalog-out "$output"
+}
+
 output="$tmp_dir/promoted.json"; promote "$catalog" "$output"
 "$schema_validator" --schemafile "$repo_root/schemas/firecracker-runtime-catalog.schema.json" "$output" >/dev/null
 "$repo_root/scripts/verify-runtime-catalog.sh" "$output"
@@ -133,6 +161,60 @@ jq -e --arg runtime "$runtime_id" --arg manifest "$manifest_sha" --arg attestati
 jq -c '.architectures.amd64.channels.stable' "$output" >"$tmp_dir/stable-after.json"
 cmp -s "$tmp_dir/stable-before.json" "$tmp_dir/stable-after.json" || fail "candidate promotion changed the non-null stable pointer"
 replay="$tmp_dir/replay.json"; promote "$output" "$replay"; cmp -s "$output" "$replay" || fail "exact candidate replay was not a no-op"
+stable_output="$tmp_dir/stable-promoted.json"; promote_stable "$output" "$stable_output"
+"$schema_validator" --schemafile "$repo_root/schemas/firecracker-runtime-catalog.schema.json" "$stable_output" >/dev/null
+"$repo_root/scripts/verify-runtime-catalog.sh" "$stable_output"
+jq -e --arg runtime "$runtime_id" --arg manifest "$manifest_sha" --arg canary "$canary_sha" '
+  .architectures.amd64.channels.stable=={runtime_id:$runtime,manifest_sha256:$manifest} and
+  .architectures.amd64.channels.candidate=={runtime_id:$runtime,manifest_sha256:$manifest} and
+  (.architectures.amd64.runtimes[]|select(.runtime_id==$runtime)).canary_attestation_sha256==$canary
+' "$stable_output" >/dev/null || fail "stable catalog transition differs"
+stable_replay="$tmp_dir/stable-replay.json"; promote_stable "$stable_output" "$stable_replay"; cmp -s "$stable_output" "$stable_replay" || fail "exact stable replay was not a no-op"
+if promote "$stable_output" "$tmp_dir/rejected-demotion.json" >/dev/null 2>&1; then fail "stable runtime was promoted back to candidate"; fi
+
+cp "$fixtures/runtime-attestation-canary.json" "$fixtures/runtime-attestation-canary-baseline.json"
+jq '.subject.manifest_sha256=("d"*64)' "$fixtures/runtime-attestation-canary-baseline.json" >"$fixtures/runtime-attestation-canary.json"
+canary_sha="$(sha256sum "$fixtures/runtime-attestation-canary.json"|awk '{print $1}')"
+printf '%s  runtime-attestation.json\n' "$canary_sha" >"$fixtures/runtime-attestation-canary.sha256"
+if promote_stable "$output" "$tmp_dir/rejected-canary-subject.json" >/dev/null 2>&1; then fail "stable promotion accepted mismatched canary subject"; fi
+mv "$fixtures/runtime-attestation-canary-baseline.json" "$fixtures/runtime-attestation-canary.json"
+canary_sha="$(sha256sum "$fixtures/runtime-attestation-canary.json"|awk '{print $1}')"
+printf '%s  runtime-attestation.json\n' "$canary_sha" >"$fixtures/runtime-attestation-canary.sha256"
+
+revoked_catalog="$tmp_dir/revoked.json"
+jq --arg runtime "$runtime_id" --arg manifest "$manifest_sha" '
+  (.architectures.amd64.runtimes[]|select(.runtime_id==$runtime)).support="revoked" |
+  .architectures.amd64.channels.candidate=null |
+  .revocations += [{runtime_id:$runtime,manifest_sha256:$manifest,reason:"test revocation",recorded_at:"2026-07-20T00:00:00Z"}]
+' "$output" >"$revoked_catalog"
+"$repo_root/scripts/verify-runtime-catalog.sh" "$revoked_catalog"
+if promote "$revoked_catalog" "$tmp_dir/rejected-revoked.json" >/dev/null 2>&1; then fail "revoked runtime ID was promoted"; fi
+
+revoked_output="$tmp_dir/revoked-output.json"
+CHECK_JSONSCHEMA="$schema_validator" "$revoker" --runtime-id "$runtime_id" --manifest-sha256 "$manifest_sha" \
+	--reason "operator revoked test runtime" --recorded-at 2026-07-20T00:00:00Z \
+	--catalog-in "$stable_output" --catalog-out "$revoked_output"
+"$repo_root/scripts/verify-runtime-catalog.sh" "$revoked_output"
+jq -e --arg runtime "$runtime_id" --arg manifest "$manifest_sha" '
+  .architectures.amd64.channels.stable==null and .architectures.amd64.channels.candidate==null and
+  (.architectures.amd64.runtimes[]|select(.runtime_id==$runtime)).support=="revoked" and
+  (.revocations|map(select(.runtime_id==$runtime and .manifest_sha256==$manifest))|length)==1
+' "$revoked_output" >/dev/null || fail "revocation transition differs"
+revoked_replay="$tmp_dir/revoked-replay.json"
+CHECK_JSONSCHEMA="$schema_validator" "$revoker" --runtime-id "$runtime_id" --manifest-sha256 "$manifest_sha" \
+	--reason "operator revoked test runtime" --recorded-at 2026-07-20T00:00:00Z \
+	--catalog-in "$revoked_output" --catalog-out "$revoked_replay"
+cmp -s "$revoked_output" "$revoked_replay" || fail "exact revocation replay was not a no-op"
+if CHECK_JSONSCHEMA="$schema_validator" "$revoker" --runtime-id "$runtime_id" --manifest-sha256 "$manifest_sha" \
+	--reason "different reason" --recorded-at 2026-07-20T00:00:00Z \
+	--catalog-in "$revoked_output" --catalog-out "$tmp_dir/rejected-revocation-conflict.json" >/dev/null 2>&1; then
+	fail "conflicting revocation was accepted"
+fi
+if CHECK_JSONSCHEMA="$schema_validator" "$revoker" --runtime-id "$runtime_id" --manifest-sha256 "$manifest_sha" \
+	--reason "   " --recorded-at 2026-07-20T00:00:00Z \
+	--catalog-in "$stable_output" --catalog-out "$tmp_dir/rejected-blank-reason.json" >/dev/null 2>&1; then
+	fail "blank revocation reason was accepted"
+fi
 jq --arg runtime "$runtime_id" '(.architectures.amd64.runtimes[]|select(.runtime_id==$runtime)).integration_attestation_sha256=("0"*64)' "$output" >"$tmp_dir/conflict.json"
 "$schema_validator" --schemafile "$repo_root/schemas/firecracker-runtime-catalog.schema.json" "$tmp_dir/conflict.json" >/dev/null || fail "same-subject evidence conflict fixture is not schema-valid"
 "$repo_root/scripts/verify-runtime-catalog.sh" "$tmp_dir/conflict.json" || fail "same-subject evidence conflict fixture violates catalog invariants"
@@ -162,4 +244,4 @@ printf '%s  runtime-attestation.json\n' "$attestation_sha" >"$fixtures/runtime-a
 jq '.subject.manifest_sha256=("d"*64)' "$fixtures/runtime-attestation.json" >"$fixtures/a" && mv "$fixtures/a" "$fixtures/runtime-attestation.json"
 if promote "$catalog" "$tmp_dir/rejected-subject.json" >/dev/null 2>&1; then fail "promotion accepted mismatched attestation subject"; fi
 
-echo "Firecracker runtime candidate promotion verified"
+echo "Firecracker runtime promotion and revocation verified"

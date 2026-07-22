@@ -1,0 +1,117 @@
+name: Revoke Firecracker runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_id:
+        description: Exact immutable Firecracker runtime ID.
+        required: true
+        type: string
+      manifest_sha256:
+        description: Exact runtime manifest SHA-256.
+        required: true
+        type: string
+      reason:
+        description: Operator-visible revocation reason.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firecracker-runtime-revocation-${{ inputs.runtime_id }}
+  cancel-in-progress: false
+
+jobs:
+  revoke-runtime:
+    runs-on: ubuntu-24.04
+    environment: firecracker-runtime-promotion
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout reviewed main without credentials
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ job.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify reviewed revocation workflow identity
+        env:
+          YEET_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          YEET_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          YEET_WORKFLOW_REF: ${{ job.workflow_ref }}
+          YEET_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          repository=yeetrun/yeet-vm-images
+          workflow_ref="$repository/.github/workflows/revoke-firecracker-runtime.yml@refs/heads/main"
+          [ "${GITHUB_ACTIONS:-}" = true ]
+          [ "${GITHUB_REPOSITORY:-}" = "$repository" ]
+          [ "${GITHUB_JOB:-}" = revoke-runtime ]
+          [ "${GITHUB_WORKFLOW_REF:-}" = "$workflow_ref" ]
+          [ "$YEET_WORKFLOW_REPOSITORY" = "$repository" ]
+          [ "$YEET_WORKFLOW_FILE_PATH" = .github/workflows/revoke-firecracker-runtime.yml ]
+          [ "$YEET_WORKFLOW_REF" = "$workflow_ref" ]
+          [[ "$YEET_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$GITHUB_SHA" = "$YEET_WORKFLOW_SHA" ]
+          [ "$(git rev-parse HEAD)" = "$YEET_WORKFLOW_SHA" ]
+          git fetch --no-tags origin main
+          [ "$(git rev-parse origin/main)" = "$YEET_WORKFLOW_SHA" ]
+
+      - name: Install verification dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git jq pipx python3
+          pipx install check-jsonschema==0.37.4
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Write the revoked catalog from reviewed main
+        id: catalog
+        env:
+          RUNTIME_ID: ${{ inputs.runtime_id }}
+          MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          set -euo pipefail
+          scripts/revoke-firecracker-runtime.sh \
+            --runtime-id "$RUNTIME_ID" --manifest-sha256 "$MANIFEST_SHA256" \
+            --reason "$REASON" --recorded-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --catalog-in runtime-catalog.json --catalog-out "$RUNNER_TEMP/runtime-catalog.json"
+          mv "$RUNNER_TEMP/runtime-catalog.json" runtime-catalog.json
+          scripts/verify-runtime-catalog.sh runtime-catalog.json
+          [ "$(git diff --name-only)" = runtime-catalog.json ]
+          echo "changed=true" >>"$GITHUB_OUTPUT"
+
+      - name: Mint repository-scoped revocation token
+        id: promotion-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.YEET_RUNTIME_GITHUB_APP_CLIENT_ID }}
+          private-key: ${{ secrets.YEET_RUNTIME_GITHUB_APP_PRIVATE_KEY }}
+          owner: yeetrun
+          repositories: yeet-vm-images
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Commit, push, and open the reviewed revocation PR
+        env:
+          GH_TOKEN: ${{ steps.promotion-app-token.outputs.token }}
+          RUNTIME_ID: ${{ inputs.runtime_id }}
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN
+          branch="revoke/$RUNTIME_ID/$GITHUB_RUN_ID"
+          git switch -c "$branch"
+          git config user.name yeet-runtime-promotion[bot]
+          git config user.email 0+yeet-runtime-promotion[bot]@users.noreply.github.com
+          git add -- runtime-catalog.json
+          git commit -m "runtime: revoke $RUNTIME_ID"
+          [ "$(git diff --name-only HEAD^ HEAD)" = runtime-catalog.json ]
+          gh auth setup-git
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+            --title "runtime: revoke $RUNTIME_ID" \
+            --body "Removes this immutable runtime from active channels, retains its catalog entry, and records the operator-provided reason."

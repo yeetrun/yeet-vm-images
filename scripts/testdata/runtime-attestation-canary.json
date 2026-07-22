@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "kind": "canary",
+  "subject": {
+    "runtime_id": "firecracker-v1.16.1-yeet-v1",
+    "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "runner": {
+    "class": "self-hosted-linux-kvm",
+    "architecture": "amd64"
+  },
+  "source": {
+    "repository": "yeetrun/yeet-vm-images",
+    "commit": "89abcdef0123456789abcdef0123456789abcdef",
+    "workflow_run": "123456790"
+  },
+  "tested_yeet": {
+    "repository": "yeetrun/yeet",
+    "commit": "76543210fedcba9876543210fedcba9876543210"
+  },
+  "artifacts": {
+    "ubuntu_guest_release": "guest-ubuntu-26.04-amd64-v2",
+    "nixos_guest_release": "guest-nixos-26.05-amd64-v2",
+    "current_kernel_release": "kernel-linux-7.1.4-yeet-v4",
+    "previous_kernel_release": "kernel-linux-7.1.4-yeet-v3"
+  },
+  "matrix": {
+    "ubuntu": "passed",
+    "nixos": "passed",
+    "current_kernel": "passed",
+    "previous_kernel": "passed",
+    "raw": "passed",
+    "zfs": "passed",
+    "custom_roots": "passed",
+    "jailer_drop": "passed"
+  },
+  "canary": {
+    "boot_cycles": 25,
+    "natural_reboots": 10,
+    "disk_restore_cycles": 5,
+    "soak_seconds": 86400,
+    "runtime_upgrade": "passed",
+    "runtime_trial": "passed",
+    "runtime_fallback": "passed",
+    "runtime_rollback": "passed",
+    "kernel_sync_current": "passed",
+    "kernel_sync_previous": "passed",
+    "networking": "passed",
+    "catch_restart": "passed",
+    "interrupted_transaction_recovery": "passed",
+    "emergency_override": false,
+    "emergency_approver": null,
+    "emergency_reason": null
+  },
+  "started_at": "2026-07-19T14:00:00Z",
+  "completed_at": "2026-07-20T14:37:00Z",
+  "result": "passed"
+}

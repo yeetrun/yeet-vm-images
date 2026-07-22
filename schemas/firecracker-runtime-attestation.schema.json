@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/yeetrun/yeet-vm-images/schemas/firecracker-runtime-attestation.schema.json",
-  "title": "Firecracker runtime integration attestation",
+  "title": "Firecracker runtime attestation",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -22,7 +22,10 @@
       "const": 1
     },
     "kind": {
-      "const": "integration"
+      "enum": [
+        "integration",
+        "canary"
+      ]
     },
     "subject": {
       "type": "object",
@@ -165,6 +168,89 @@
         }
       }
     },
+    "canary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boot_cycles",
+        "natural_reboots",
+        "disk_restore_cycles",
+        "soak_seconds",
+        "runtime_upgrade",
+        "runtime_trial",
+        "runtime_fallback",
+        "runtime_rollback",
+        "kernel_sync_current",
+        "kernel_sync_previous",
+        "networking",
+        "catch_restart",
+        "interrupted_transaction_recovery",
+        "emergency_override",
+        "emergency_approver",
+        "emergency_reason"
+      ],
+      "properties": {
+        "boot_cycles": {
+          "type": "integer",
+          "minimum": 25
+        },
+        "natural_reboots": {
+          "type": "integer",
+          "minimum": 10
+        },
+        "disk_restore_cycles": {
+          "type": "integer",
+          "minimum": 5
+        },
+        "soak_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "runtime_upgrade": { "const": "passed" },
+        "runtime_trial": { "const": "passed" },
+        "runtime_fallback": { "const": "passed" },
+        "runtime_rollback": { "const": "passed" },
+        "kernel_sync_current": { "const": "passed" },
+        "kernel_sync_previous": { "const": "passed" },
+        "networking": { "const": "passed" },
+        "catch_restart": { "const": "passed" },
+        "interrupted_transaction_recovery": { "const": "passed" },
+        "emergency_override": { "type": "boolean" },
+        "emergency_approver": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "emergency_reason": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "emergency_override": { "const": true } },
+            "required": ["emergency_override"]
+          },
+          "then": {
+            "properties": {
+              "emergency_approver": { "type": "string", "minLength": 1 },
+              "emergency_reason": { "type": "string", "minLength": 1 }
+            }
+          },
+          "else": {
+            "properties": {
+              "soak_seconds": { "minimum": 86400 },
+              "emergency_approver": { "type": "null" },
+              "emergency_reason": { "type": "null" }
+            }
+          }
+        }
+      ]
+    },
     "started_at": {
       "type": "string",
       "format": "date-time"
@@ -176,5 +262,15 @@
     "result": {
       "const": "passed"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "kind": { "const": "canary" } },
+        "required": ["kind"]
+      },
+      "then": { "required": ["canary"] },
+      "else": { "not": { "required": ["canary"] } }
+    }
+  ]
 }

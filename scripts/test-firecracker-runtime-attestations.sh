@@ -5,12 +5,15 @@ export LC_ALL=C
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 writer="$repo_root/scripts/write-firecracker-runtime-attestation.sh"
+canary_writer="$repo_root/scripts/write-firecracker-runtime-canary-attestation.sh"
 publisher="$repo_root/scripts/publish-firecracker-runtime-attestation.sh"
 harness="$repo_root/scripts/test-firecracker-runtime-kvm.sh"
+canary_harness="$repo_root/scripts/test-firecracker-runtime-canary.sh"
 guest_downloader="$repo_root/scripts/download-published-guest-base.sh"
 guest_synthesizer="$repo_root/scripts/synthesize-firecracker-runtime-test-guest.sh"
 schema="$repo_root/schemas/firecracker-runtime-attestation.schema.json"
 fixture="$repo_root/scripts/testdata/runtime-attestation-integration.json"
+canary_fixture="$repo_root/scripts/testdata/runtime-attestation-canary.json"
 schema_validator="${CHECK_JSONSCHEMA:-$(command -v check-jsonschema || true)}"
 if [ -z "$schema_validator" ] && command -v mise >/dev/null 2>&1; then schema_validator="$(mise which check-jsonschema 2>/dev/null || true)"; fi
 [ -n "$schema_validator" ] && [ -x "$schema_validator" ] || { echo "missing check-jsonschema" >&2; exit 1; }
@@ -21,12 +24,13 @@ trap cleanup EXIT
 fail() { echo "Firecracker runtime attestation test failed: $*" >&2; exit 1; }
 reject() { if "$@" >/dev/null 2>&1; then fail "command unexpectedly succeeded: $*"; fi; }
 
-for path in "$writer" "$publisher" "$harness" "$guest_downloader" "$guest_synthesizer"; do
+for path in "$writer" "$canary_writer" "$publisher" "$harness" "$canary_harness" "$guest_downloader" "$guest_synthesizer"; do
 	[ -x "$path" ] || fail "missing executable ${path#"$repo_root/"}"
 done
 
 # The closed contract binds repository provenance and the exact Yeet code tested.
 "$schema_validator" --schemafile "$schema" "$fixture" >/dev/null
+"$schema_validator" --schemafile "$schema" "$canary_fixture" >/dev/null
 jq -e '
   .tested_yeet == {
     repository: "yeetrun/yeet",
@@ -56,6 +60,36 @@ for mutation in missing-cell failed-result unknown-field missing-tested-yeet wro
 		fail "schema accepted $mutation attestation"
 	fi
 done
+
+for mutation in unknown-canary-field too-few-boots too-few-reboots too-few-restores short-soak incomplete-override; do
+	case "$mutation" in
+		unknown-canary-field) jq '.canary.extra=true' "$canary_fixture" >"$tmp_dir/$mutation.json" ;;
+		too-few-boots) jq '.canary.boot_cycles=24' "$canary_fixture" >"$tmp_dir/$mutation.json" ;;
+		too-few-reboots) jq '.canary.natural_reboots=9' "$canary_fixture" >"$tmp_dir/$mutation.json" ;;
+		too-few-restores) jq '.canary.disk_restore_cycles=4' "$canary_fixture" >"$tmp_dir/$mutation.json" ;;
+		short-soak) jq '.canary.soak_seconds=3600' "$canary_fixture" >"$tmp_dir/$mutation.json" ;;
+		incomplete-override) jq '.canary.soak_seconds=3600 | .canary.emergency_override=true | .canary.emergency_approver="operator"' "$canary_fixture" >"$tmp_dir/$mutation.json" ;;
+	esac
+	if "$schema_validator" --schemafile "$schema" "$tmp_dir/$mutation.json" >/dev/null 2>&1; then
+		fail "schema accepted $mutation canary attestation"
+	fi
+done
+jq '.canary.soak_seconds=3600 | .canary.emergency_override=true | .canary.emergency_approver="operator" | .canary.emergency_reason="approved first-runtime bootstrap"' "$canary_fixture" >"$tmp_dir/emergency-canary.json"
+"$schema_validator" --schemafile "$schema" "$tmp_dir/emergency-canary.json" >/dev/null
+
+canary_matrix="$tmp_dir/canary-matrix.json"
+jq '.matrix' "$canary_fixture" >"$canary_matrix"
+written_canary="$tmp_dir/written-canary.json"
+"$canary_writer" \
+	--runtime-id firecracker-v1.16.1-yeet-v1 --manifest-sha256 "$(printf 'a%.0s' {1..64})" \
+	--source-commit 89abcdef0123456789abcdef0123456789abcdef --workflow-run 123456790 \
+	--yeet-commit 76543210fedcba9876543210fedcba9876543210 \
+	--ubuntu-guest-release guest-ubuntu-26.04-amd64-v2 --nixos-guest-release guest-nixos-26.05-amd64-v2 \
+	--current-kernel-release kernel-linux-7.1.4-yeet-v4 --previous-kernel-release kernel-linux-7.1.4-yeet-v3 \
+	--matrix-file "$canary_matrix" --boot-cycles 25 --natural-reboots 10 --disk-restore-cycles 5 \
+	--soak-seconds 86400 --emergency-override false --started-at 2026-07-19T14:00:00Z \
+	--completed-at 2026-07-20T14:37:00Z --out "$written_canary"
+cmp -s "$written_canary" "$canary_fixture" || fail "canary writer output differs from reviewed fixture"
 
 matrix="$tmp_dir/matrix.json"
 jq '.matrix' "$fixture" >"$matrix"
@@ -273,5 +307,26 @@ done
 [ "$(grep -Fc -- "--test-user yeet-vm" "$case_log")" = 7 ] || fail "KVM harness did not require the production yeet-vm runtime identity"
 if grep -Eq '(^| )firecracker( |$)|direct-firecracker' "$case_log"; then fail "KVM harness exposed a direct Firecracker fallback"; fi
 jq -e 'keys == ["current_kernel", "custom_roots", "jailer_drop", "nixos", "previous_kernel", "raw", "ubuntu", "zfs"] and all(.[]; . == "passed")' "$matrix_out" >/dev/null
+
+cat >"$bin_dir/canary-kvm" <<'MOCK_CANARY_KVM'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"$YEET_CANARY_CALL_LOG"
+matrix=""
+while [ "$#" -gt 0 ]; do
+	case "$1" in --matrix-out) matrix="$2"; shift 2 ;; *) shift ;; esac
+done
+jq -n '{ubuntu:"passed",nixos:"passed",current_kernel:"passed",previous_kernel:"passed",raw:"passed",zfs:"passed",custom_roots:"passed",jailer_drop:"passed"}' >"$matrix"
+MOCK_CANARY_KVM
+chmod +x "$bin_dir/canary-kvm"
+canary_evidence="$tmp_dir/canary-evidence.json"
+YEET_RUNTIME_CANARY_TEST_MODE=1 YEET_CANARY_KVM_HARNESS="$bin_dir/canary-kvm" YEET_CANARY_CALL_LOG="$tmp_dir/canary-calls.log" \
+	"$canary_harness" --runtime-release firecracker-v1.16.1-yeet-v1 \
+	--runtime-manifest-sha256 "$(printf 'a%.0s' {1..64})" \
+	--ubuntu-guest-release guest-ubuntu-26.04-amd64-v2 --nixos-guest-release guest-nixos-26.05-amd64-v2 \
+	--current-kernel-release kernel-linux-7.1.4-yeet-v4 --previous-kernel-release kernel-linux-7.1.4-yeet-v3 \
+	--yeet-ref 76543210fedcba9876543210fedcba9876543210 --work-dir "$tmp_dir/canary-work" --evidence-out "$canary_evidence"
+[ "$(wc -l <"$tmp_dir/canary-calls.log"|tr -d ' ')" = 5 ] || fail "canary did not execute five full KVM matrices"
+jq -e '.boot_cycles>=25 and .natural_reboots>=10 and .disk_restore_cycles>=5 and .functional_cycles==5 and all(.matrix[];.=="passed")' "$canary_evidence" >/dev/null || fail "canary counters are insufficient"
 
 echo "Firecracker runtime attestation and KVM orchestration verified"

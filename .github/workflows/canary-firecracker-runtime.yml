@@ -1,0 +1,278 @@
+name: Canary Firecracker runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_id:
+        description: Exact candidate runtime ID.
+        required: true
+        type: string
+      manifest_sha256:
+        description: Exact candidate manifest SHA-256.
+        required: true
+        type: string
+      ubuntu_guest_release:
+        description: Exact Ubuntu guest release.
+        required: true
+        type: string
+      nixos_guest_release:
+        description: Exact NixOS guest release.
+        required: true
+        type: string
+      current_kernel_release:
+        description: Exact current kernel release.
+        required: true
+        type: string
+      previous_kernel_release:
+        description: Exact previous kernel release.
+        required: true
+        type: string
+      yeet_ref:
+        description: Exact full Yeet commit to exercise.
+        required: true
+        type: string
+      shorten_soak:
+        description: Use protected emergency approval to shorten the 24-hour soak.
+        required: true
+        default: false
+        type: boolean
+      emergency_approver:
+        description: Named emergency approver; required only for shortened soak.
+        required: false
+        type: string
+      emergency_reason:
+        description: Emergency justification; required only for shortened soak.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firecracker-runtime-canary-${{ inputs.runtime_id }}
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    runs-on: ubuntu-24.04
+    outputs:
+      harness_commit: ${{ steps.inputs.outputs.harness_commit }}
+    steps:
+      - name: Checkout the exact reviewed workflow commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ job.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify candidate and exact inputs
+        id: inputs
+        env:
+          RUNTIME_ID: ${{ inputs.runtime_id }}
+          MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          YEET_REF: ${{ inputs.yeet_ref }}
+          SHORTEN_SOAK: ${{ inputs.shorten_soak }}
+          EMERGENCY_APPROVER: ${{ inputs.emergency_approver }}
+          EMERGENCY_REASON: ${{ inputs.emergency_reason }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REPOSITORY" = yeetrun/yeet-vm-images ]
+          [ "$GITHUB_WORKFLOW_REF" = yeetrun/yeet-vm-images/.github/workflows/canary-firecracker-runtime.yml@refs/heads/main ]
+          [ "$(git rev-parse HEAD)" = "${{ job.workflow_sha }}" ]
+          git fetch --no-tags origin main
+          [ "$(git rev-parse origin/main)" = "${{ job.workflow_sha }}" ] || {
+            echo "main advanced after this canary workflow was loaded" >&2
+            exit 1
+          }
+          [[ "$RUNTIME_ID" =~ ^firecracker-v[0-9]+[.][0-9]+[.][0-9]+-yeet-v[1-9][0-9]*$ ]]
+          [[ "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$YEET_REF" =~ ^[0-9a-f]{40}$ ]]
+          jq -e --arg runtime "$RUNTIME_ID" --arg manifest "$MANIFEST_SHA256" '
+            .architectures.amd64.channels.candidate=={runtime_id:$runtime,manifest_sha256:$manifest} and
+            (.architectures.amd64.runtimes[]|select(.runtime_id==$runtime and .manifest_sha256==$manifest) |
+              .support=="supported" and .integration_attestation_url!=null and .integration_attestation_sha256!=null and
+              .canary_attestation_url==null and .canary_attestation_sha256==null)
+          ' runtime-catalog.json >/dev/null || {
+            echo "Canary subject is not the exact integrated candidate on reviewed main" >&2
+            exit 1
+          }
+          if [ "$SHORTEN_SOAK" = true ]; then
+            [ -n "${EMERGENCY_APPROVER//[[:space:]]/}" ] && [ -n "${EMERGENCY_REASON//[[:space:]]/}" ] || {
+              echo "Shortened soak requires emergency approver and reason" >&2
+              exit 1
+            }
+          else
+            [ -z "$EMERGENCY_APPROVER" ] && [ -z "$EMERGENCY_REASON" ] || {
+              echo "Ordinary canary must not include emergency metadata" >&2
+              exit 1
+            }
+          fi
+          echo "harness_commit=${{ job.workflow_sha }}" >>"$GITHUB_OUTPUT"
+
+  canary:
+    needs: normalize
+    runs-on: [self-hosted, linux, x64, kvm, yeet-runtime-canary]
+    timeout-minutes: 1800
+    environment:
+      name: ${{ inputs.shorten_soak && 'firecracker-runtime-emergency' || 'firecracker-runtime-canary' }}
+    steps:
+      - name: Checkout the exact canary harness commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ needs.normalize.outputs.harness_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout the exact Yeet commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          repository: yeetrun/yeet
+          ref: ${{ inputs.yeet_ref }}
+          path: yeet-src
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned canary dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl gh git jq pipx python3
+          pipx install check-jsonschema==0.37.4
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Install the exact Yeet Go toolchain
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: yeet-src/go.mod
+          cache-dependency-path: yeet-src/go.sum
+
+      - name: Execute five complete KVM matrices
+        env:
+          GH_TOKEN: ${{ github.token }}
+          YEET_KVM_YEET_SOURCE_DIR: ${{ github.workspace }}/yeet-src
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "${{ needs.normalize.outputs.harness_commit }}" ]
+          [ "$(git -C yeet-src rev-parse HEAD)" = "${{ inputs.yeet_ref }}" ]
+          [ ! -L /var/lib/yeet-runtime-canary ] || { echo "Canary root must not be a symbolic link" >&2; exit 1; }
+          sudo install -d -o root -g root -m 0755 /var/lib/yeet-runtime-canary
+          echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GITHUB_ENV"
+          echo "started_epoch=$(date -u +%s)" >>"$GITHUB_ENV"
+          scripts/test-firecracker-runtime-canary.sh \
+            --runtime-release "${{ inputs.runtime_id }}" --runtime-manifest-sha256 "${{ inputs.manifest_sha256 }}" \
+            --ubuntu-guest-release "${{ inputs.ubuntu_guest_release }}" --nixos-guest-release "${{ inputs.nixos_guest_release }}" \
+            --current-kernel-release "${{ inputs.current_kernel_release }}" --previous-kernel-release "${{ inputs.previous_kernel_release }}" \
+            --yeet-ref "${{ inputs.yeet_ref }}" \
+            --work-dir "/var/lib/yeet-runtime-canary/run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --evidence-out "$RUNNER_TEMP/runtime-canary-evidence.json"
+
+      - name: Complete the required soak and write exact evidence
+        env:
+          SHORTEN_SOAK: ${{ inputs.shorten_soak }}
+          EMERGENCY_APPROVER: ${{ inputs.emergency_approver }}
+          EMERGENCY_REASON: ${{ inputs.emergency_reason }}
+        run: |
+          set -euo pipefail
+          if [ "$SHORTEN_SOAK" != true ]; then
+            target=$((started_epoch + 86400))
+            while [ "$(date -u +%s)" -lt "$target" ]; do sleep 60; done
+          fi
+          completed_epoch="$(date -u +%s)"
+          soak_seconds=$((completed_epoch - started_epoch))
+          [ "$soak_seconds" -ge 1 ] || soak_seconds=1
+          jq '.matrix' "$RUNNER_TEMP/runtime-canary-evidence.json" >"$RUNNER_TEMP/runtime-canary-matrix.json"
+          mkdir -p "$RUNNER_TEMP/runtime-canary-attestation"
+          args=(
+            --runtime-id "${{ inputs.runtime_id }}" --manifest-sha256 "${{ inputs.manifest_sha256 }}"
+            --source-commit "${{ needs.normalize.outputs.harness_commit }}" --workflow-run "$GITHUB_RUN_ID"
+            --yeet-commit "${{ inputs.yeet_ref }}"
+            --ubuntu-guest-release "${{ inputs.ubuntu_guest_release }}" --nixos-guest-release "${{ inputs.nixos_guest_release }}"
+            --current-kernel-release "${{ inputs.current_kernel_release }}" --previous-kernel-release "${{ inputs.previous_kernel_release }}"
+            --matrix-file "$RUNNER_TEMP/runtime-canary-matrix.json"
+            --boot-cycles "$(jq -er .boot_cycles "$RUNNER_TEMP/runtime-canary-evidence.json")"
+            --natural-reboots "$(jq -er .natural_reboots "$RUNNER_TEMP/runtime-canary-evidence.json")"
+            --disk-restore-cycles "$(jq -er .disk_restore_cycles "$RUNNER_TEMP/runtime-canary-evidence.json")"
+            --soak-seconds "$soak_seconds" --emergency-override "$SHORTEN_SOAK"
+            --started-at "$started_at" --completed-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            --out "$RUNNER_TEMP/runtime-canary-attestation/runtime-attestation.json"
+          )
+          if [ "$SHORTEN_SOAK" = true ]; then args+=(--emergency-approver "$EMERGENCY_APPROVER" --emergency-reason "$EMERGENCY_REASON"); fi
+          scripts/write-firecracker-runtime-canary-attestation.sh "${args[@]}"
+          (cd "$RUNNER_TEMP/runtime-canary-attestation" && sha256sum runtime-attestation.json | awk '{print $1 "  runtime-attestation.json"}' >runtime-attestation.sha256)
+
+      - name: Transfer evidence to the protected publisher
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: firecracker-runtime-canary-${{ github.run_id }}
+          path: ${{ runner.temp }}/runtime-canary-attestation
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-firecracker-runtime-canary:
+    needs: [normalize, canary]
+    if: ${{ needs.canary.result == 'success' }}
+    runs-on: ubuntu-24.04
+    environment: firecracker-runtime-canary-publish
+    permissions:
+      contents: read
+    concurrency:
+      group: firecracker-runtime-canary-publish
+      cancel-in-progress: false
+    outputs:
+      attestation_url: ${{ steps.publish.outputs.attestation_url }}
+      attestation_sha256: ${{ steps.publish.outputs.attestation_sha256 }}
+    steps:
+      - name: Checkout the exact canary harness commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ needs.normalize.outputs.harness_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download passed canary evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: firecracker-runtime-canary-${{ github.run_id }}
+          path: dist/runtime-attestation
+
+      - name: Install verification dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y jq pipx python3
+          pipx install check-jsonschema==0.37.4
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Mint repository-scoped canary publication token
+        id: canary-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.YEET_RUNTIME_GITHUB_APP_CLIENT_ID }}
+          private-key: ${{ secrets.YEET_RUNTIME_GITHUB_APP_PRIVATE_KEY }}
+          owner: yeetrun
+          repositories: yeet-vm-images
+          permission-administration: read
+          permission-contents: write
+
+      - name: Publish immutable canary evidence
+        id: publish
+        env:
+          GH_TOKEN: ${{ steps.canary-app-token.outputs.token }}
+          YEET_CANARY_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          YEET_CANARY_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          YEET_CANARY_WORKFLOW_REF: ${{ job.workflow_ref }}
+          YEET_CANARY_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          scripts/publish-firecracker-runtime-attestation.sh --kind canary \
+            --runtime-id "${{ inputs.runtime_id }}" --manifest-sha256 "${{ inputs.manifest_sha256 }}" \
+            --target "${{ needs.normalize.outputs.harness_commit }}" --run-id "$GITHUB_RUN_ID" \
+            --yeet-commit "${{ inputs.yeet_ref }}" \
+            --ubuntu-guest-release "${{ inputs.ubuntu_guest_release }}" --nixos-guest-release "${{ inputs.nixos_guest_release }}" \
+            --current-kernel-release "${{ inputs.current_kernel_release }}" --previous-kernel-release "${{ inputs.previous_kernel_release }}" \
+            --attestation dist/runtime-attestation/runtime-attestation.json \
+            --checksum dist/runtime-attestation/runtime-attestation.sha256
+          attestation_sha256="$(sha256sum dist/runtime-attestation/runtime-attestation.json|awk '{print $1}')"
+          attestation_url="https://github.com/$GITHUB_REPOSITORY/releases/download/${{ inputs.runtime_id }}-canary-$GITHUB_RUN_ID/runtime-attestation.json"
+          echo "attestation_url=$attestation_url" >>"$GITHUB_OUTPUT"
+          echo "attestation_sha256=$attestation_sha256" >>"$GITHUB_OUTPUT"

@@ -2,12 +2,13 @@
 set -euo pipefail
 export LC_ALL=C
 
-usage() { echo "usage: $0 --runtime-id ID --manifest-sha256 SHA256 --target COMMIT --run-id RUN_ID --yeet-commit COMMIT --ubuntu-guest-release ID --nixos-guest-release ID --current-kernel-release ID --previous-kernel-release ID --attestation FILE --checksum FILE" >&2; exit 2; }
+usage() { echo "usage: $0 [--kind integration|canary] --runtime-id ID --manifest-sha256 SHA256 --target COMMIT --run-id RUN_ID --yeet-commit COMMIT --ubuntu-guest-release ID --nixos-guest-release ID --current-kernel-release ID --previous-kernel-release ID --attestation FILE --checksum FILE" >&2; exit 2; }
 fail() { echo "Firecracker runtime attestation publish failed: $*" >&2; exit 1; }
 require() { command -v "$1" >/dev/null 2>&1 || fail "missing required command: $1"; }
-runtime_id="" manifest_sha256="" target="" run_id="" yeet_commit="" ubuntu_guest_release="" nixos_guest_release="" current_kernel_release="" previous_kernel_release="" attestation="" checksum=""
+kind=integration runtime_id="" manifest_sha256="" target="" run_id="" yeet_commit="" ubuntu_guest_release="" nixos_guest_release="" current_kernel_release="" previous_kernel_release="" attestation="" checksum=""
 while [ "$#" -gt 0 ]; do
 	case "$1" in
+		--kind) [ "$#" -ge 2 ] || usage; kind="$2"; shift 2 ;;
 		--runtime-id) [ "$#" -ge 2 ] || usage; runtime_id="$2"; shift 2 ;;
 		--manifest-sha256) [ "$#" -ge 2 ] || usage; manifest_sha256="$2"; shift 2 ;;
 		--target) [ "$#" -ge 2 ] || usage; target="$2"; shift 2 ;;
@@ -27,18 +28,29 @@ for required in runtime_id manifest_sha256 target run_id yeet_commit ubuntu_gues
 [[ "$manifest_sha256" =~ ^[0-9a-f]{64}$ ]] || fail "invalid manifest digest"
 [[ "$target" =~ ^[0-9a-f]{40}$ ]] || fail "target must be a full lowercase commit"
 [[ "$run_id" =~ ^[1-9][0-9]*$ ]] || fail "invalid workflow run ID"
+case "$kind" in integration|canary) ;; *) fail "invalid attestation kind" ;; esac
 [ -f "$attestation" ] && [ ! -L "$attestation" ] || fail "attestation is not a regular file"
 [ -f "$checksum" ] && [ ! -L "$checksum" ] || fail "checksum is not a regular file"
 
 repository=yeetrun/yeet-vm-images
-workflow="$repository/.github/workflows/test-firecracker-runtime-kvm.yml@refs/heads/main"
+if [ "$kind" = integration ]; then
+	workflow_file=.github/workflows/test-firecracker-runtime-kvm.yml
+	publisher_job=publish-firecracker-runtime-integration
+	identity_prefix=YEET_INTEGRATION_WORKFLOW
+else
+	workflow_file=.github/workflows/canary-firecracker-runtime.yml
+	publisher_job=publish-firecracker-runtime-canary
+	identity_prefix=YEET_CANARY_WORKFLOW
+fi
+workflow="$repository/$workflow_file@refs/heads/main"
 [ "${GITHUB_ACTIONS:-}" = true ] && [ "${GITHUB_REPOSITORY:-}" = "$repository" ] || fail "publisher requires the reviewed Actions repository"
-[ "${GITHUB_JOB:-}" = publish-firecracker-runtime-integration ] || fail "publisher requires the reviewed publishing job"
+[ "${GITHUB_JOB:-}" = "$publisher_job" ] || fail "publisher requires the reviewed publishing job"
 [ "${GITHUB_WORKFLOW_REF:-}" = "$workflow" ] || fail "publisher requires the approved workflow on main"
-[ "${YEET_INTEGRATION_WORKFLOW_REPOSITORY:-}" = "$repository" ] || fail "workflow repository identity mismatch"
-[ "${YEET_INTEGRATION_WORKFLOW_FILE_PATH:-}" = .github/workflows/test-firecracker-runtime-kvm.yml ] || fail "workflow file identity mismatch"
-[ "${YEET_INTEGRATION_WORKFLOW_REF:-}" = "$workflow" ] || fail "workflow ref identity mismatch"
-[ "${YEET_INTEGRATION_WORKFLOW_SHA:-}" = "$target" ] || fail "workflow SHA identity mismatch"
+repository_var="${identity_prefix}_REPOSITORY"; file_var="${identity_prefix}_FILE_PATH"; ref_var="${identity_prefix}_REF"; sha_var="${identity_prefix}_SHA"
+[ "${!repository_var:-}" = "$repository" ] || fail "workflow repository identity mismatch"
+[ "${!file_var:-}" = "$workflow_file" ] || fail "workflow file identity mismatch"
+[ "${!ref_var:-}" = "$workflow" ] || fail "workflow ref identity mismatch"
+[ "${!sha_var:-}" = "$target" ] || fail "workflow SHA identity mismatch"
 [ "${GITHUB_RUN_ID:-}" = "$run_id" ] || fail "run ID differs from the native workflow run"
 [ -n "${GH_TOKEN:-}" ] || fail "publisher requires a repository-scoped GitHub App token"
 unset GITHUB_TOKEN
@@ -50,10 +62,10 @@ if [ -z "$schema_validator" ] && command -v check-jsonschema >/dev/null 2>&1; th
 elif [ -z "$schema_validator" ] && command -v mise >/dev/null 2>&1; then schema_validator="$(mise which check-jsonschema 2>/dev/null || true)"; fi
 [ -n "$schema_validator" ] && [ -x "$schema_validator" ] || fail "missing required command: check-jsonschema"
 "$schema_validator" --schemafile "$repo_root/schemas/firecracker-runtime-attestation.schema.json" "$attestation" >/dev/null || fail "attestation is not schema-valid"
-jq -e --arg runtime "$runtime_id" --arg manifest "$manifest_sha256" --arg commit "$target" --arg run "$run_id" \
+jq -e --arg kind "$kind" --arg runtime "$runtime_id" --arg manifest "$manifest_sha256" --arg commit "$target" --arg run "$run_id" \
 	--arg yeet "$yeet_commit" --arg ubuntu "$ubuntu_guest_release" --arg nixos "$nixos_guest_release" \
 	--arg current "$current_kernel_release" --arg previous "$previous_kernel_release" '
-  .kind == "integration" and .result == "passed" and
+	  .kind == $kind and .result == "passed" and
   .subject == {runtime_id:$runtime,manifest_sha256:$manifest} and
   .source == {repository:"yeetrun/yeet-vm-images",commit:$commit,workflow_run:$run} and
   .tested_yeet == {repository:"yeetrun/yeet",commit:$yeet} and
@@ -66,13 +78,13 @@ attestation_sha="$(sha256sum "$attestation" | awk '{print $1}')"
 
 response_parser="$repo_root/scripts/parse-github-api-response.py"
 [ -x "$response_parser" ] || fail "response parser is unavailable"
-tag="$runtime_id-integration-$run_id"
+tag="$runtime_id-$kind-$run_id"
 tmp_dir="$(mktemp -d)"
 tag_created=false release_id=""
 cleanup() {
 	status=$?
 	if [ "$status" -ne 0 ] && [ "$tag_created" = true ]; then
-		echo "Preserved partial integration evidence $tag and release ID ${release_id:-not-created}. Start a new manual recovery run so it receives a new run ID; nothing was overwritten or deleted." >&2
+		echo "Preserved partial $kind evidence $tag and release ID ${release_id:-not-created}. Start a new manual recovery run so it receives a new run ID; nothing was overwritten or deleted." >&2
 	fi
 	rm -rf "$tmp_dir"
 }
@@ -110,8 +122,8 @@ resolve_ref() {
 resolve_ref
 
 release_request="$tmp_dir/release-request.json"
-jq -n --arg tag "$tag" --arg target "$target" \
-	'{tag_name:$tag,target_commitish:$target,name:$tag,body:"Passed Firecracker runtime KVM integration evidence.",draft:true,prerelease:false,make_latest:"false"}' >"$release_request"
+jq -n --arg tag "$tag" --arg target "$target" --arg kind "$kind" \
+		'{tag_name:$tag,target_commitish:$target,name:$tag,body:("Passed Firecracker runtime "+$kind+" evidence."),draft:true,prerelease:false,make_latest:"false"}' >"$release_request"
 release="$tmp_dir/release.json"
 api_call 201 POST "repos/$repository/releases" "$release" --input "$release_request" >/dev/null
 release_id="$(jq -er '.id | select(type == "number" and . > 0 and floor == .)' "$release")"

@@ -1,8 +1,15 @@
-name: Promote Firecracker runtime candidate
+name: Promote Firecracker runtime
 
 on:
   workflow_dispatch:
     inputs:
+      channel:
+        description: Catalog channel to promote.
+        required: true
+        type: choice
+        options:
+          - candidate
+          - stable
       runtime_id:
         description: Exact immutable Firecracker runtime ID.
         required: true
@@ -19,16 +26,24 @@ on:
         description: Exact integration attestation SHA-256.
         required: true
         type: string
+      canary_attestation_url:
+        description: Exact immutable canary attestation URL; required for stable.
+        required: false
+        type: string
+      canary_attestation_sha256:
+        description: Exact canary attestation SHA-256; required for stable.
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: firecracker-runtime-promotion-${{ inputs.runtime_id }}-candidate
+  group: firecracker-runtime-promotion-${{ inputs.runtime_id }}-${{ inputs.channel }}
   cancel-in-progress: false
 
 jobs:
-  promote-candidate:
+  promote-runtime:
     runs-on: ubuntu-24.04
     environment: firecracker-runtime-promotion
     permissions:
@@ -53,7 +68,7 @@ jobs:
           workflow_ref="$repository/.github/workflows/promote-firecracker-runtime.yml@refs/heads/main"
           [ "${GITHUB_ACTIONS:-}" = true ]
           [ "${GITHUB_REPOSITORY:-}" = "$repository" ]
-          [ "${GITHUB_JOB:-}" = promote-candidate ]
+          [ "${GITHUB_JOB:-}" = promote-runtime ]
           [ "${GITHUB_WORKFLOW_REF:-}" = "$workflow_ref" ]
           [ "$YEET_PROMOTION_WORKFLOW_REPOSITORY" = "$repository" ]
           [ "$YEET_PROMOTION_WORKFLOW_FILE_PATH" = .github/workflows/promote-firecracker-runtime.yml ]
@@ -75,25 +90,40 @@ jobs:
           pipx install check-jsonschema==0.37.4
           echo "$HOME/.local/bin" >>"$GITHUB_PATH"
 
-      - name: Write the candidate catalog from reviewed main
+      - name: Write the promoted catalog from reviewed main
         id: catalog
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel }}
           RUNTIME_ID: ${{ inputs.runtime_id }}
           MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
           INTEGRATION_ATTESTATION_URL: ${{ inputs.integration_attestation_url }}
           INTEGRATION_ATTESTATION_SHA256: ${{ inputs.integration_attestation_sha256 }}
+          CANARY_ATTESTATION_URL: ${{ inputs.canary_attestation_url }}
+          CANARY_ATTESTATION_SHA256: ${{ inputs.canary_attestation_sha256 }}
         run: |
           set -euo pipefail
-          scripts/promote-firecracker-runtime.sh \
-            --channel candidate --runtime-id "$RUNTIME_ID" \
-            --manifest-sha256 "$MANIFEST_SHA256" \
-            --integration-attestation-url "$INTEGRATION_ATTESTATION_URL" \
-            --integration-attestation-sha256 "$INTEGRATION_ATTESTATION_SHA256" \
+          args=(
+            --channel "$CHANNEL" --runtime-id "$RUNTIME_ID"
+            --manifest-sha256 "$MANIFEST_SHA256"
+            --integration-attestation-url "$INTEGRATION_ATTESTATION_URL"
+            --integration-attestation-sha256 "$INTEGRATION_ATTESTATION_SHA256"
             --catalog-in runtime-catalog.json --catalog-out "$RUNNER_TEMP/runtime-catalog.json"
+          )
+          if [ "$CHANNEL" = stable ]; then
+            [ -n "$CANARY_ATTESTATION_URL" ] && [ -n "$CANARY_ATTESTATION_SHA256" ] || {
+              echo "Stable promotion requires exact canary evidence" >&2
+              exit 1
+            }
+            args+=(--canary-attestation-url "$CANARY_ATTESTATION_URL" --canary-attestation-sha256 "$CANARY_ATTESTATION_SHA256")
+          elif [ -n "$CANARY_ATTESTATION_URL" ] || [ -n "$CANARY_ATTESTATION_SHA256" ]; then
+            echo "Candidate promotion must not include canary evidence" >&2
+            exit 1
+          fi
+          scripts/promote-firecracker-runtime.sh "${args[@]}"
           if cmp -s runtime-catalog.json "$RUNNER_TEMP/runtime-catalog.json"; then
             echo "changed=false" >>"$GITHUB_OUTPUT"
-            echo "The exact candidate entry and pointer are already promoted; verified no-op." >>"$GITHUB_STEP_SUMMARY"
+            echo "The exact $CHANNEL entry and pointer are already promoted; verified no-op." >>"$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           mv "$RUNNER_TEMP/runtime-catalog.json" runtime-catalog.json
@@ -116,15 +146,16 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Commit, push, and open the reviewed candidate PR
+      - name: Commit, push, and open the reviewed promotion PR
         if: ${{ steps.catalog.outputs.changed == 'true' }}
         env:
           GH_TOKEN: ${{ steps.promotion-app-token.outputs.token }}
           RUNTIME_ID: ${{ inputs.runtime_id }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           unset GITHUB_TOKEN
-          branch="promote/$RUNTIME_ID/candidate"
+          branch="promote/$RUNTIME_ID/$CHANNEL"
           if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
             echo "Promotion branch already exists: $branch. Inspect or close the existing attempt before starting a new run." >&2
             exit 1
@@ -137,7 +168,7 @@ jobs:
           git config user.name yeet-runtime-promotion[bot]
           git config user.email 0+yeet-runtime-promotion[bot]@users.noreply.github.com
           git add -- runtime-catalog.json
-          git commit -m "runtime: list $RUNTIME_ID as candidate"
+          git commit -m "runtime: promote $RUNTIME_ID to $CHANNEL"
           [ "$(git diff --name-only HEAD^ HEAD)" = runtime-catalog.json ] || {
             echo "Promotion commit contains an unexpected path" >&2
             exit 1
@@ -145,14 +176,14 @@ jobs:
           gh auth setup-git
           git push origin "HEAD:refs/heads/$branch"
           gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
-            --title "runtime: list $RUNTIME_ID as candidate" \
-            --body "Lists the exact immutable runtime and passed integration evidence as the candidate channel. Stable is unchanged."
+            --title "runtime: promote $RUNTIME_ID to $CHANNEL" \
+            --body "Promotes the exact immutable runtime to $CHANNEL using the required immutable validation evidence. Review and merge remain deliberate."
 
       - name: Report promotion failure
         if: ${{ failure() }}
         run: |
           {
-            echo "### Firecracker runtime candidate promotion failed"
+            echo "### Firecracker runtime promotion failed"
             echo
             echo "Inspect any preserved branch or PR before starting a new promotion run. Nothing was force-pushed, merged, or written directly to main."
           } >>"$GITHUB_STEP_SUMMARY"
