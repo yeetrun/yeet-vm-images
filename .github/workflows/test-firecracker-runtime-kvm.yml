@@ -227,6 +227,11 @@ jobs:
           YEET_KVM_YEET_SOURCE_DIR: ${{ github.workspace }}/yeet-src
         run: |
           set -euo pipefail
+          [ ! -L /var/lib/yeet-runtime-integration ] || {
+            echo "Integration root must not be a symbolic link" >&2
+            exit 1
+          }
+          sudo install -d -o root -g root -m 0755 /var/lib/yeet-runtime-integration
           started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo "started_at=$started_at" >>"$GITHUB_ENV"
           scripts/test-firecracker-runtime-kvm.sh \
@@ -237,7 +242,7 @@ jobs:
             --current-kernel-release "$CURRENT_KERNEL_RELEASE" \
             --previous-kernel-release "$PREVIOUS_KERNEL_RELEASE" \
             --yeet-ref "$YEET_COMMIT" \
-            --work-dir "/var/tmp/yeet-firecracker-runtime-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --work-dir "/var/lib/yeet-runtime-integration/run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
             --matrix-out "$RUNNER_TEMP/runtime-matrix.json"
 
       - name: Write exact integration evidence
