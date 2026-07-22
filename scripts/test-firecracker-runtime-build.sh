@@ -213,7 +213,14 @@ set +e; oversized_stream_message="$(YEET_TEST_CURL_SCENARIO=oversized-stream dow
 if [ "$oversized_stream_rc" -eq 0 ] || ! grep -Fqi 'size' <<<"$oversized_stream_message"; then fail "oversized transfer did not fail closed"; fi
 
 # I2 archive parser adversaries: the same bounded parser inspects and copies.
-for scenario in absolute parent dot duplicate-normalized duplicate-effective symlink hardlink device fifo socket sparse pax global-pax gnu-longname unexpected-type unexpected-member unexpected-prefix extra-executable bad-mode invalid-encoding embedded-nul oversized-member oversized-total decompression-bomb; do
+valid_pax="$(generate_case valid-pax valid-pax)"
+mkdir "$tmp_dir/valid-pax-output"
+"$extractor" "$valid_pax/firecracker-v1.16.1-x86_64.tgz" v1.16.1 "$tmp_dir/valid-pax-output"
+for name in SHA256SUMS firecracker-v1.16.1-x86_64 jailer-v1.16.1-x86_64; do
+	[ -f "$tmp_dir/valid-pax-output/$name" ] || fail "valid PAX archive omitted $name"
+done
+[ "$(find "$tmp_dir/valid-pax-output" -type f | wc -l | tr -d ' ')" = 3 ] || fail "ignored PAX archive members were extracted"
+for scenario in absolute parent dot duplicate-normalized duplicate-effective symlink hardlink device fifo socket sparse pax pax-size pax-unknown global-pax gnu-longname unexpected-type unexpected-prefix bad-mode invalid-encoding embedded-nul oversized-member oversized-total decompression-bomb; do
 	assert_download_failure "$scenario" "$scenario" 'archive inspection failed'
 done
 compressed_cap="$tmp_dir/compressed-cap.tgz"; truncate -s $((128 * 1024 * 1024 + 1)) "$compressed_cap"; mkdir "$tmp_dir/compressed-cap-out"

@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+import re
 import stat
 import sys
 import tempfile
@@ -16,7 +17,9 @@ MAX_COMPRESSED = 128 * 1024 * 1024
 MAX_UNCOMPRESSED = 160 * 1024 * 1024
 MAX_MEMBER = 80 * 1024 * 1024
 MAX_TOTAL_MEMBER_BYTES = 96 * 1024 * 1024
-MAX_TOTAL_MEMBERS = 3
+MAX_TOTAL_MEMBERS = 64
+MAX_PAX_BYTES = 4096
+MAX_PAX_RECORDS = 8
 BLOCK = 512
 
 
@@ -66,6 +69,77 @@ def copy_exact(source, output: Path, size: int) -> str:
     finally:
         os.close(descriptor)
     return digest.hexdigest()
+
+
+def read_exact(source, size: int, label: str) -> bytes:
+    chunks: list[bytes] = []
+    remaining = size
+    while remaining:
+        chunk = source.read(min(1024 * 1024, remaining))
+        if not chunk:
+            fail(f"{label} is truncated")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def discard_exact(source, size: int) -> None:
+    remaining = size
+    while remaining:
+        chunk = source.read(min(1024 * 1024, remaining))
+        if not chunk:
+            fail("member data is truncated")
+        remaining -= len(chunk)
+
+
+def consume_padding(source, size: int) -> None:
+    padding = (-size) % BLOCK
+    if padding and read_exact(source, padding, "member padding") != bytes(padding):
+        fail("member padding is missing or nonzero")
+
+
+def parse_pax_metadata(data: bytes) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    position = 0
+    records = 0
+    while position < len(data):
+        separator = data.find(b" ", position)
+        if separator < 0:
+            fail("PAX record has no length separator")
+        length_bytes = data[position:separator]
+        if not length_bytes or any(byte not in b"0123456789" for byte in length_bytes):
+            fail("PAX record length is not canonical decimal")
+        if len(length_bytes) > 1 and length_bytes.startswith(b"0"):
+            fail("PAX record length has leading zeroes")
+        length = int(length_bytes)
+        end = position + length
+        if end > len(data) or end <= separator + 1:
+            fail("PAX record length is invalid")
+        record = data[separator + 1:end]
+        if not record.endswith(b"\n") or b"=" not in record[:-1]:
+            fail("PAX record is malformed")
+        key_bytes, value_bytes = record[:-1].split(b"=", 1)
+        try:
+            key = key_bytes.decode("ascii", "strict")
+            value = value_bytes.decode("ascii", "strict")
+        except UnicodeDecodeError:
+            fail("PAX metadata is not ASCII")
+        if key not in {"uid", "mtime"}:
+            fail(f"unsupported PAX metadata key: {key!r}")
+        if key in metadata:
+            fail(f"duplicate PAX metadata key: {key!r}")
+        if key == "uid" and not re.fullmatch(r"[0-9]{1,20}", value):
+            fail("PAX uid is not a bounded decimal integer")
+        if key == "mtime" and not re.fullmatch(r"[0-9]{1,20}(?:\.[0-9]{1,9})?", value):
+            fail("PAX mtime is not a bounded nonnegative timestamp")
+        metadata[key] = value
+        position = end
+        records += 1
+        if records > MAX_PAX_RECORDS:
+            fail("PAX metadata record count exceeds policy")
+    if not metadata:
+        fail("PAX metadata is empty")
+    return metadata
 
 
 def decompress(archive: Path):
@@ -128,7 +202,10 @@ def main() -> None:
 
     source = decompress(archive)
     seen: set[str] = set()
+    seen_expected: set[str] = set()
     total_member_bytes = 0
+    total_members = 0
+    pending_pax: dict[str, str] | None = None
     zero_blocks = 0
     try:
         while True:
@@ -145,7 +222,8 @@ def main() -> None:
                 continue
             if zero_blocks:
                 fail("tar stream has a single zero block")
-            if len(seen) >= MAX_TOTAL_MEMBERS:
+            total_members += 1
+            if total_members > MAX_TOTAL_MEMBERS:
                 fail("archive member count exceeds policy")
             stored_checksum = parse_octal(header[148:156], "header checksum")
             checksum_header = bytearray(header)
@@ -157,16 +235,7 @@ def main() -> None:
             name = parse_string(header[0:100], "member name")
             prefix_field = parse_string(header[345:500], "member prefix")
             effective_name = f"{prefix_field}/{name}" if prefix_field else name
-            if not effective_name or effective_name.startswith("/") or "\\" in effective_name:
-                fail(f"unsafe member path: {effective_name!r}")
-            segments = effective_name.split("/")
-            if any(segment in ("", ".", "..") for segment in segments):
-                fail(f"non-canonical member path: {effective_name!r}")
-            if effective_name in seen:
-                fail(f"duplicate effective member path: {effective_name!r}")
             typeflag = header[156:157]
-            if typeflag not in (b"\0", b"0"):
-                fail(f"unexpected metadata or member type {typeflag!r}")
             size = parse_octal(header[124:136], "member size")
             mode = parse_octal(header[100:108], "member mode") & 0o7777
             if size > MAX_MEMBER:
@@ -174,19 +243,47 @@ def main() -> None:
             total_member_bytes += size
             if total_member_bytes > MAX_TOTAL_MEMBER_BYTES:
                 fail("archive member total exceeds policy")
-            if effective_name not in expected:
-                fail(f"unexpected archive member: {effective_name!r}")
-            output_name, expected_mode = expected[effective_name]
-            if mode != expected_mode:
+
+            if typeflag == b"x":
+                if pending_pax is not None:
+                    fail("consecutive PAX metadata headers are unsupported")
+                if effective_name != "././@PaxHeader" or prefix_field or mode != 0:
+                    fail("PAX metadata header is not canonical")
+                if size > MAX_PAX_BYTES:
+                    fail("PAX metadata size exceeds policy")
+                pending_pax = parse_pax_metadata(read_exact(source, size, "PAX metadata"))
+                consume_padding(source, size)
+                continue
+
+            if not effective_name or effective_name.startswith("/") or "\\" in effective_name:
+                fail(f"unsafe member path: {effective_name!r}")
+            segments = effective_name.split("/")
+            if any(segment in ("", ".", "..") for segment in segments):
+                fail(f"non-canonical member path: {effective_name!r}")
+            if len(segments) != 2 or segments[0] != prefix:
+                fail(f"unexpected archive member prefix: {effective_name!r}")
+            if effective_name in seen:
+                fail(f"duplicate effective member path: {effective_name!r}")
+            if typeflag not in (b"\0", b"0"):
+                fail(f"unexpected metadata or member type {typeflag!r}")
+            if mode not in (0o644, 0o755):
                 fail(f"non-canonical member mode for {effective_name!r}")
-            copy_exact(source, destination / output_name, size)
-            padding = (-size) % BLOCK
-            if padding and source.read(padding) != bytes(padding):
-                fail("member padding is missing or nonzero")
-            os.chmod(destination / output_name, expected_mode)
+            if effective_name in expected:
+                output_name, expected_mode = expected[effective_name]
+                if mode != expected_mode:
+                    fail(f"non-canonical member mode for {effective_name!r}")
+                copy_exact(source, destination / output_name, size)
+                os.chmod(destination / output_name, expected_mode)
+                seen_expected.add(effective_name)
+            else:
+                discard_exact(source, size)
+            consume_padding(source, size)
             seen.add(effective_name)
-        if seen != set(expected):
-            fail("archive does not contain exactly the required members")
+            pending_pax = None
+        if pending_pax is not None:
+            fail("PAX metadata is not followed by a member")
+        if seen_expected != set(expected):
+            fail("archive does not contain all required members")
     finally:
         source.close()
 

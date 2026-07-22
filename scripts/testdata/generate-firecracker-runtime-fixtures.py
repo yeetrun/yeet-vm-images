@@ -26,6 +26,16 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def pax_record(key: str, value: str) -> bytes:
+    payload = f" {key}={value}\n".encode()
+    length = len(payload) + 1
+    while True:
+        record = str(length).encode() + payload
+        if len(record) == length:
+            return record
+        length = len(record)
+
+
 def elf(output: str, machine: int = 62) -> bytes:
     message = (output + "\n").encode()
     code_prefix = (
@@ -55,7 +65,8 @@ def elf(output: str, machine: int = 62) -> bytes:
 
 def add_member(tar: tarfile.TarFile, name: str, data: bytes = b"", mode: int = 0o644, kind: bytes = tarfile.REGTYPE, linkname: str = "") -> None:
     info = tarfile.TarInfo(name)
-    info.size = len(data) if kind in (tarfile.REGTYPE, tarfile.AREGTYPE) else 0
+    data_types = (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.GNUTYPE_LONGNAME)
+    info.size = len(data) if kind in data_types else 0
     info.mode = mode
     info.mtime = 0
     info.uid = info.gid = 0
@@ -77,6 +88,11 @@ def members(scenario: str):
         (f"{PREFIX}/firecracker-{VERSION}-x86_64", firecracker, 0o755, tarfile.REGTYPE, ""),
         (f"{PREFIX}/jailer-{VERSION}-x86_64", jailer, 0o755, tarfile.REGTYPE, ""),
     ]
+    if scenario == "valid-pax":
+        result.extend([
+            (f"{PREFIX}/LICENSE", b"fixture license\n", 0o644, tarfile.REGTYPE, ""),
+            (f"{PREFIX}/seccompiler-bin-{VERSION}-x86_64", elf("seccompiler"), 0o755, tarfile.REGTYPE, ""),
+        ])
     if scenario == "oversized-total":
         large = bytes(33 * 1024 * 1024)
         return [
@@ -95,7 +111,9 @@ def members(scenario: str):
         "fifo": (f"{PREFIX}/fifo", b"", 0o600, tarfile.FIFOTYPE, ""),
         "socket": (f"{PREFIX}/socket", b"", 0o600, b"s", ""),
         "sparse": (f"{PREFIX}/sparse", b"", 0o600, tarfile.GNUTYPE_SPARSE, ""),
-        "pax": (f"{PREFIX}/pax", b"path=x\n", 0o600, tarfile.XHDTYPE, ""),
+        "pax": ("././@PaxHeader", pax_record("path", "x"), 0o000, tarfile.XHDTYPE, ""),
+        "pax-size": ("././@PaxHeader", pax_record("size", "1"), 0o000, tarfile.XHDTYPE, ""),
+        "pax-unknown": ("././@PaxHeader", pax_record("vendor", "x"), 0o000, tarfile.XHDTYPE, ""),
         "global-pax": (f"{PREFIX}/global", b"path=x\n", 0o600, tarfile.XGLTYPE, ""),
         "gnu-longname": ("././@LongLink", b"long\0", 0o600, tarfile.GNUTYPE_LONGNAME, ""),
         "unexpected-type": (f"{PREFIX}/unknown", b"", 0o600, b"X", ""),
@@ -143,9 +161,22 @@ def main() -> None:
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     tar_buffer = io.BytesIO()
-    with tarfile.open(fileobj=tar_buffer, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+    archive_format = tarfile.PAX_FORMAT if args.scenario == "valid-pax" else tarfile.USTAR_FORMAT
+    with tarfile.open(fileobj=tar_buffer, mode="w", format=archive_format) as tar:
         for member in members(args.scenario):
-            add_member(tar, *member)
+            if args.scenario == "valid-pax":
+                info = tarfile.TarInfo(member[0])
+                info.size = len(member[1])
+                info.mode = member[2]
+                info.mtime = 0
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                info.type = member[3]
+                info.linkname = member[4]
+                info.pax_headers = {"uid": "29852511", "mtime": "1782726985.0"}
+                tar.addfile(info, io.BytesIO(member[1]) if info.size else None)
+            else:
+                add_member(tar, *member)
     tar_data = mutate_header(tar_buffer.getvalue(), args.scenario)
     if args.scenario == "decompression-bomb":
         compressor = zlib.compressobj(9, zlib.DEFLATED, 16 + zlib.MAX_WBITS)
