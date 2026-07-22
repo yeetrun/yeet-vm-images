@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "component": {
+    "kind": "guest-base",
+    "id": "guest-ubuntu-26.04-amd64-v2",
+    "manifest_sha256": "26d329ea6ebbe1037d85619c87db55d405459022f3ca1e9f0f6fe704b9a1f70f",
+    "rootfs_sha256": "7eacab74cf1a0ee246c0d389653fd047a600a35b0a7ddaad284883b5bde26904"
+  },
+  "release": {
+    "source_commit": "ce9192bf4c63404e21289d7c418a3cbf1d1443da",
+    "workflow_run": "29885481359"
+  },
+  "validation": {
+    "yeet_commit": "02e32c2764d0d49f501a8e728cc25d30eb8394ce",
+    "catalog_commit": "af6eecb700d0f5a73a5a47a1df55836263535ecd",
+    "host_class": "linux-amd64-kvm-zfs",
+    "storage_profile": "zfs-zvol-custom-service-root",
+    "runtime_id": "firecracker-v1.16.1-yeet-v1",
+    "runtime_manifest_sha256": "29d83ce729b5b047bb68e56f087a934693e9d945965310ab0ef3948330650457",
+    "firecracker_sha256": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7",
+    "jailer_sha256": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+    "kernel_id": "kernel-linux-7.1.4-yeet-v4",
+    "kernel_manifest_sha256": "05c70cc78db192ab8e1b88a2dd1a4b3e1401a243f5b05bf75708b2ed2cb44a9b",
+    "checks": {
+      "immutable_manifest_digest": "passed",
+      "component_native_provisioning": "passed",
+      "guest_readiness": "passed",
+      "jailer_uid_gid_drop": "passed-999-994",
+      "manual_kernel_sync_restart": "passed",
+      "image_update_no_restart": "passed",
+      "disk_snapshot_mode": "passed-disk-only",
+      "disk_snapshot_restore": "passed",
+      "component_vm_clone": "unsupported-fail-closed",
+      "runtime_upgrade_trial_fallback_rollback": "passed-by-canary",
+      "catch_restart_preserved_running_vms": "passed",
+      "legacy_adoption_no_restart": "passed",
+      "memory_snapshot_support": "absent"
+    }
+  },
+  "canary": {
+    "attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.16.1-yeet-v1-canary-29893998019/runtime-attestation.json",
+    "attestation_sha256": "6388358a8ef1630326c38b333d64e5a08e5a17c10ed95df2267f30038fe7e312",
+    "matrix_cycles": 5,
+    "boot_cycles": 180,
+    "natural_reboots": 35,
+    "disk_restore_cycles": 5
+  },
+  "started_at": "2026-07-22T05:31:52Z",
+  "completed_at": "2026-07-22T06:34:30Z",
+  "result": "passed"
+}

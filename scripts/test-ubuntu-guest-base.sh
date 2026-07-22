@@ -90,7 +90,7 @@ jq -e --arg guest_base_id "$guest_base_id" --arg manifest_sha "$manifest_sha" \
 	($updated.guest_bases | length) == (($original[0].guest_bases | length) + 1) and
 	($original[0].guest_bases - $updated.guest_bases | length) == 0 and
 	.channels["ubuntu-26.04-amd64"].candidate == {guest_base_id: $guest_base_id, manifest_sha256: $manifest_sha} and
-	.channels["ubuntu-26.04-amd64"].stable == null and
+	.channels["ubuntu-26.04-amd64"].stable == $original[0].channels["ubuntu-26.04-amd64"].stable and
 	.channels["nixos-26.05-amd64"] == $original[0].channels["nixos-26.05-amd64"]
 ' "$tmp_dir/guest-catalog.json" >/dev/null
 
