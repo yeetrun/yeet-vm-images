@@ -5,6 +5,10 @@ on:
     - cron: "37 9 * * *"
   workflow_dispatch:
     inputs:
+      upstream_version:
+        description: Exact reviewed upstream version; empty discovers the newest stable release.
+        required: false
+        type: string
       allow_unsigned_tag:
         description: Permit a reviewed unsigned upstream tag for this run.
         required: false
@@ -50,6 +54,7 @@ jobs:
         id: candidate
         env:
           GH_TOKEN: ${{ github.token }}
+          REQUESTED_UPSTREAM_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.upstream_version || '' }}
         run: |
           set -euo pipefail
           report_discovery_failure() {
@@ -66,8 +71,17 @@ jobs:
           }
           trap report_discovery_failure EXIT
 
-          upstream="$(scripts/resolve-latest-firecracker.sh)"
-          upstream_version="$(jq -er '.upstream_version' <<<"$upstream")"
+          upstream_version="$REQUESTED_UPSTREAM_VERSION"
+          if [ -n "$upstream_version" ]; then
+            [[ "$upstream_version" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]] || {
+              echo "Invalid requested upstream version: $upstream_version" >&2
+              exit 1
+            }
+            scripts/resolve-firecracker-runtime-policy.py security/firecracker-runtime-policy.json "$upstream_version" >/dev/null
+          else
+            upstream="$(scripts/resolve-latest-firecracker.sh)"
+            upstream_version="$(jq -er '.upstream_version' <<<"$upstream")"
+          fi
           allocation="$(scripts/resolve-firecracker-runtime-release.sh "$upstream_version")"
           runtime_id="$(jq -er '.next_release' <<<"$allocation")"
 

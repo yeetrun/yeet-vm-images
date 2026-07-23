@@ -58,7 +58,7 @@ require_file "$published_test"
 require_text "$build" '    - cron: "37 9 * * *"' "daily discovery schedule is missing or changed"
 require_text "$build" '  workflow_dispatch:' "manual discovery trigger is missing"
 [ "$(grep -Fc '    - cron:' "$build")" = 1 ] || fail "discovery workflow must contain exactly one schedule"
-for input in allow_unsigned_tag allow_signer_rotation; do
+for input in upstream_version allow_unsigned_tag allow_signer_rotation; do
 	require_text "$build" "      $input:" "workflow_dispatch input is missing: $input"
 done
 for extra_trigger in '  push:' '  pull_request:' '  repository_dispatch:' '  workflow_call:'; do
@@ -113,6 +113,8 @@ reject_text "$build" 'event_type' "post-publication event payload remains"
 require_text "$build" '  group: sync-latest-stable-firecracker' "discovery concurrency group is missing"
 require_text "$build" '  cancel-in-progress: false' "discovery cancellation policy is missing"
 require_text "$build" 'scripts/resolve-latest-firecracker.sh' "official stable release discovery is missing"
+require_text "$build" 'REQUESTED_UPSTREAM_VERSION: ${{ github.event_name == '\''workflow_dispatch'\'' && inputs.upstream_version || '\'''\'' }}' "manual historical runtime input is not isolated from scheduled discovery"
+require_text "$build" 'scripts/resolve-firecracker-runtime-policy.py security/firecracker-runtime-policy.json "$upstream_version"' "manual historical runtime selection is not bound to reviewed policy"
 require_text "$build" 'scripts/verify-published-firecracker-runtime.sh' "published candidate is not verified before no-op"
 require_text "$build" 'allocation="$(scripts/resolve-firecracker-runtime-release.sh "$upstream_version")"' "next revision is not allocated from all remote tag refs"
 require_text "$build" 'published="$(scripts/resolve-firecracker-runtime-release.sh "$upstream_version" "$published_tags")"' "published candidates are not resolved separately"

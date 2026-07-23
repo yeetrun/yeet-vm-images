@@ -275,6 +275,7 @@ jq -e '.components.firecracker.version_output == "Firecracker v1.16.1"' "$offici
 "$schema_validator" --schemafile "$repo_root/schemas/firecracker-runtime-manifest.schema.json" "$valid_out/runtime-manifest.json" >/dev/null
 jq -e '.classification == {production_release:true,default_seccomp:true} and .support.state == "supported"' "$valid_out/runtime-manifest.json" >/dev/null
 [ "$("$policy_resolver" "$repo_root/security/firecracker-runtime-policy.json" v1.15.0 | jq -r .support_state)" = eol ] || fail "EOL policy did not resolve"
+[ "$("$policy_resolver" "$repo_root/security/firecracker-runtime-policy.json" v1.14.3 | jq -r .support_state)" = eol ] || fail "legacy compatibility policy did not resolve"
 for mutation in production_release default_seccomp binary_origin seccomp_evidence support_state; do
 	policy="$tmp_dir/policy-$mutation.json"; cp "$repo_root/security/firecracker-runtime-policy.json" "$policy"
 	case "$mutation" in production_release) filter='.versions["v1.16.1"].production_release=false' ;; default_seccomp) filter='.versions["v1.16.1"].default_seccomp=false' ;; binary_origin) filter='.versions["v1.16.1"].binary_origin="local"' ;; seccomp_evidence) filter='.versions["v1.16.1"].seccomp_evidence="disabled"' ;; support_state) filter='.versions["v1.16.1"].support_state="unsupported"' ;; esac
