@@ -4,6 +4,17 @@
     "amd64": {
       "runtimes": [
         {
+          "runtime_id": "firecracker-v1.14.3-yeet-v1",
+          "manifest_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.14.3-yeet-v1/runtime-manifest.json",
+          "manifest_sha256": "d0fe40dfb31003821390ad9515bbcfb64f235ec218edb959f6b6980a7275784f",
+          "upstream_version": "v1.14.3",
+          "support": "eol",
+          "integration_attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.14.3-yeet-v1-integration-29976540236/runtime-attestation.json",
+          "integration_attestation_sha256": "94392668be9fee889c97b9141a5a24e068650db3f16c55cfd84843b1713a0bdd",
+          "canary_attestation_url": null,
+          "canary_attestation_sha256": null
+        },
+        {
           "runtime_id": "firecracker-v1.16.1-yeet-v1",
           "manifest_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.16.1-yeet-v1/runtime-manifest.json",
           "manifest_sha256": "29d83ce729b5b047bb68e56f087a934693e9d945965310ab0ef3948330650457",
