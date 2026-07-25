@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "component": {
+    "kind": "kernel",
+    "id": "kernel-linux-7.1.5-yeet-v1",
+    "manifest_sha256": "4ea74629cb1e9cb5287791d0e6fb286a45b9632b89ba0bb465f616126d103822",
+    "vmlinux_sha256": "8304836582d42a6ef1322ce85a2fb95727becfd3b3c4520c23d71eea1a9f46fe"
+  },
+  "release": {
+    "source_commit": "d5faf5f1bf7cc9e94e18d6342db9ce513f3c9630",
+    "workflow_run": "30154947262"
+  },
+  "validation": {
+    "yeet_commit": "84a5eb72dc4a1117b233cf465d8a0c3df50c744b",
+    "catalog_commit": "0119b427bd8ea27b4440d5c6efe702ab24ce111f",
+    "host_class": "linux-amd64-kvm-zfs",
+    "guest_profiles": [
+      "ubuntu-26.04-zfs-zvol",
+      "nixos-26.05-zfs-zvol",
+      "ubuntu-26.04-raw-file-by-integration",
+      "nixos-26.05-raw-file-by-integration"
+    ],
+    "runtime_id": "firecracker-v1.16.1-yeet-v1",
+    "runtime_manifest_sha256": "29d83ce729b5b047bb68e56f087a934693e9d945965310ab0ef3948330650457",
+    "checks": {
+      "immutable_manifest_digest": "passed",
+      "booted_kernel_identity": "passed-7.1.5-yeet-both-guests",
+      "guest_package_forward_update": "passed-apt-and-nix-flake",
+      "catalog_verified_guest_request": "passed",
+      "automatic_guest_request_monotonicity": "passed",
+      "automatic_kernel_downgrade_prevention": "passed",
+      "explicit_manual_kernel_sync": "passed-by-unit-test",
+      "natural_guest_reboot": "passed-both-guests",
+      "current_kernel_matrix": "passed-by-integration",
+      "previous_kernel_matrix": "passed-by-integration",
+      "raw_zfs_storage_matrix": "passed-by-integration",
+      "runtime_identity_unchanged": "passed"
+    }
+  },
+  "integration": {
+    "attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.16.1-yeet-v1-integration-30162802705/runtime-attestation.json",
+    "attestation_sha256": "b11ab5ab92c6ef68c3f174ebc322efa3a932c48da15fc8226a893eb5a5977ef3",
+    "workflow_run": "30162802705"
+  },
+  "started_at": "2026-07-25T15:06:49Z",
+  "completed_at": "2026-07-25T16:18:01Z",
+  "result": "passed"
+}

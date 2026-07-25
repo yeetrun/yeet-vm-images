@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "component": {
+    "kind": "guest-base",
+    "id": "guest-nixos-26.05-amd64-v3",
+    "manifest_sha256": "49e34cf8ce6248cd1e3a1f924246432ab88a47dd336da85c6d56a3daa466a69b",
+    "rootfs_sha256": "e3e2d2bc033a422588c1dacc0c1039b3a3125b0b7708886c74a562a41cdc9be7"
+  },
+  "release": {
+    "source_commit": "520288261b0e44c68c874d59d9f75e4d9b40e5a3",
+    "workflow_run": "29923596636"
+  },
+  "validation": {
+    "yeet_commit": "84a5eb72dc4a1117b233cf465d8a0c3df50c744b",
+    "catalog_commit": "0119b427bd8ea27b4440d5c6efe702ab24ce111f",
+    "host_class": "linux-amd64-kvm-zfs",
+    "storage_profile": "zfs-zvol-default-service-root",
+    "runtime_id": "firecracker-v1.16.1-yeet-v1",
+    "runtime_manifest_sha256": "29d83ce729b5b047bb68e56f087a934693e9d945965310ab0ef3948330650457",
+    "firecracker_sha256": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7",
+    "jailer_sha256": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+    "kernel_id": "kernel-linux-7.1.5-yeet-v1",
+    "kernel_manifest_sha256": "4ea74629cb1e9cb5287791d0e6fb286a45b9632b89ba0bb465f616126d103822",
+    "checks": {
+      "immutable_manifest_digest": "passed",
+      "component_native_provisioning": "passed",
+      "guest_readiness": "passed",
+      "stale_build_selector_identity": "confirmed-kernel-linux-7.1.4-yeet-v4",
+      "automatic_kernel_downgrade_prevention": "passed",
+      "guest_package_channel_update": "passed-flake-0119b427bd8ea27b4440d5c6efe702ab24ce111f",
+      "nixos_rebuild_switch": "passed",
+      "natural_guest_reboot": "passed-new-boot-identity",
+      "booted_kernel_identity": "passed-7.1.5-yeet",
+      "host_component_lock": "passed-kernel-linux-7.1.5-yeet-v1",
+      "runtime_identity_unchanged": "passed",
+      "raw_zfs_storage_matrix": "passed-by-integration",
+      "custom_service_roots": "passed-by-integration",
+      "jailer_uid_gid_drop": "passed-by-integration"
+    }
+  },
+  "integration": {
+    "attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.16.1-yeet-v1-integration-30162802705/runtime-attestation.json",
+    "attestation_sha256": "b11ab5ab92c6ef68c3f174ebc322efa3a932c48da15fc8226a893eb5a5977ef3",
+    "workflow_run": "30162802705"
+  },
+  "started_at": "2026-07-25T15:06:49Z",
+  "completed_at": "2026-07-25T16:18:01Z",
+  "result": "passed"
+}
