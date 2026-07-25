@@ -37,8 +37,8 @@
   "channels": {
     "nixos-26.05-amd64": {
       "stable": {
-        "guest_base_id": "guest-nixos-26.05-amd64-v2",
-        "manifest_sha256": "d57385a9dee6d73c5fb515dd77b228cfff969b3995058d736a538248935576ce"
+        "guest_base_id": "guest-nixos-26.05-amd64-v3",
+        "manifest_sha256": "49e34cf8ce6248cd1e3a1f924246432ab88a47dd336da85c6d56a3daa466a69b"
       },
       "candidate": {
         "guest_base_id": "guest-nixos-26.05-amd64-v3",
@@ -47,8 +47,8 @@
     },
     "ubuntu-26.04-amd64": {
       "stable": {
-        "guest_base_id": "guest-ubuntu-26.04-amd64-v2",
-        "manifest_sha256": "26d329ea6ebbe1037d85619c87db55d405459022f3ca1e9f0f6fe704b9a1f70f"
+        "guest_base_id": "guest-ubuntu-26.04-amd64-v3",
+        "manifest_sha256": "7a73c9d03cb1633eb1f89a7f1202ff090e0422349e11d745f1a0f7d392f62ac5"
       },
       "candidate": {
         "guest_base_id": "guest-ubuntu-26.04-amd64-v3",
