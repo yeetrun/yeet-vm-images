@@ -11,11 +11,12 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: sync-latest-stable-kernel
+  cancel-in-progress: false
+
 permissions:
-  contents: write
-  pull-requests: write
-  pages: write
-  id-token: write
+  contents: read
 
 jobs:
   detect:
@@ -28,6 +29,7 @@ jobs:
       kernel_release: ${{ steps.plan.outputs.kernel_release }}
       kernel_release_build: ${{ steps.plan.outputs.kernel_release_build }}
       promotion_needed: ${{ steps.plan.outputs.promotion_needed }}
+      package_publication_needed: ${{ steps.plan.outputs.package_publication_needed }}
 
     steps:
       - name: Checkout
@@ -65,6 +67,7 @@ jobs:
           kernel_release="$next_release"
           kernel_release_build="true"
           promotion_needed="true"
+          package_publication_needed="true"
 
           if [ "$FORCE" != "true" ] && [ -n "$current_release" ]; then
             current_dir="$RUNNER_TEMP/current-kernel-release"
@@ -73,11 +76,35 @@ jobs:
               kernel_release="$current_release"
               kernel_release_build="false"
               manifest_sha256="$(sha256sum "$current_dir/kernel-manifest.json" | awk '{ print $1 }')"
+              public_kernel_catalog="$RUNNER_TEMP/public-kernel-catalog.json"
               if jq -e --arg release "$current_release" --arg manifest "$manifest_sha256" '
                 any(.kernels[]; .kernel_id == $release and .manifest_sha256 == $manifest) and
                 .channels.amd64.stable == {kernel_id: $release, manifest_sha256: $manifest}
-              ' kernel-catalog.json >/dev/null; then
+              ' kernel-catalog.json >/dev/null &&
+                curl -fsSL --retry 3 --retry-all-errors \
+                  -o "$public_kernel_catalog" \
+                  "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/kernel-catalog.json" &&
+                jq -e --arg release "$current_release" --arg manifest "$manifest_sha256" '
+                  any(.kernels[]; .kernel_id == $release and .manifest_sha256 == $manifest) and
+                  .channels.amd64.stable == {kernel_id: $release, manifest_sha256: $manifest}
+                ' "$public_kernel_catalog" >/dev/null; then
                 promotion_needed="false"
+              fi
+              public_package_catalog="$RUNNER_TEMP/public-kernel-package-catalog.json"
+              if jq -e --arg release "$current_release" --arg manifest "$manifest_sha256" '
+                .release_id == $release and
+                .manifest_sha256 == $manifest and
+                .selector_schema_version == 2
+              ' kernel-packages/catalog.json >/dev/null &&
+                curl -fsSL --retry 3 --retry-all-errors \
+                  -o "$public_package_catalog" \
+                  "https://yeetrun.github.io/yeet-vm-images/kernel-packages/catalog.json" &&
+                jq -e --arg release "$current_release" --arg manifest "$manifest_sha256" '
+                  .release_id == $release and
+                  .manifest_sha256 == $manifest and
+                  .selector_schema_version == 2
+                ' "$public_package_catalog" >/dev/null; then
+                package_publication_needed="false"
               fi
             fi
           fi
@@ -86,6 +113,7 @@ jobs:
             echo "kernel_release=$kernel_release"
             echo "kernel_release_build=$kernel_release_build"
             echo "promotion_needed=$promotion_needed"
+            echo "package_publication_needed=$package_publication_needed"
           } >>"$GITHUB_OUTPUT"
 
           {
@@ -95,6 +123,7 @@ jobs:
             echo "- Immutable release: \`$kernel_release\`"
             echo "- Build required: \`$kernel_release_build\`"
             echo "- Catalog promotion required: \`$promotion_needed\`"
+            echo "- Package publication required: \`$package_publication_needed\`"
             echo "- Forced packaging revision: \`$FORCE\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
@@ -102,6 +131,8 @@ jobs:
     name: Build canonical kernel release
     needs: detect
     if: ${{ needs.detect.outputs.kernel_release_build == 'true' }}
+    permissions:
+      contents: write
     uses: ./.github/workflows/build-kernel.yml
     with:
       kernel_release: ${{ needs.detect.outputs.kernel_release }}
@@ -112,44 +143,45 @@ jobs:
       overwrite_release: false
     secrets: inherit
 
-  publish-kernel-packages:
-    name: Publish kernel package sources
+  promote-kernel-catalog:
+    name: Promote and verify trusted kernel catalog
     needs:
       - detect
       - build-kernel
     if: >-
       ${{
         always() &&
-        needs.detect.outputs.promotion_needed == 'true' &&
+        (needs.detect.outputs.promotion_needed == 'true' ||
+          needs.detect.outputs.package_publication_needed == 'true') &&
         (needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped')
       }}
-    uses: ./.github/workflows/publish-kernel-packages.yml
-    with:
-      kernel_version: ${{ needs.detect.outputs.kernel_version }}
-      kernel_release: ${{ needs.detect.outputs.kernel_release }}
-    secrets: inherit
-
-  promote-kernel-catalog:
-    name: Open stable kernel catalog promotion PR
-    needs:
-      - detect
-      - build-kernel
-      - publish-kernel-packages
-    if: >-
-      ${{
-        always() &&
-        needs.detect.outputs.promotion_needed == 'true' &&
-        (needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped') &&
-        needs.publish-kernel-packages.result == 'success'
-      }}
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout current main
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: main
 
+      - name: Validate promotion ref
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "kernel catalog promotion must run from refs/heads/main, got $GITHUB_REF" >&2
+            exit 1
+          fi
+          git fetch origin main
+          git checkout -B main origin/main
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+
       - name: Download and verify immutable kernel release
+        id: catalog
         env:
           KERNEL_RELEASE: ${{ needs.detect.outputs.kernel_release }}
           KERNEL_VERSION: ${{ needs.detect.outputs.kernel_version }}
@@ -167,16 +199,67 @@ jobs:
             --catalog-out "$RUNNER_TEMP/kernel-catalog.json"
           mv "$RUNNER_TEMP/kernel-catalog.json" kernel-catalog.json
           scripts/verify-component-catalogs.sh
+          echo "manifest_sha256=$manifest_sha256" >>"$GITHUB_OUTPUT"
 
-      - name: Open catalog promotion PR
-        uses: peter-evans/create-pull-request@v7
-        with:
-          branch: automation/kernel-${{ needs.detect.outputs.kernel_release }}
-          delete-branch: true
-          commit-message: catalog promote ${{ needs.detect.outputs.kernel_release }}
-          title: Promote ${{ needs.detect.outputs.kernel_release }}
-          body: |
-            Promotes the independently published kernel release after artifact and selector-package verification.
+      - name: Commit catalog promotion
+        env:
+          KERNEL_RELEASE: ${{ needs.detect.outputs.kernel_release }}
+        run: |
+          set -euo pipefail
 
-            This changes only `kernel-catalog.json`; guest-base catalogs and legacy image aliases are untouched.
-          add-paths: kernel-catalog.json
+          if git diff --quiet -- kernel-catalog.json; then
+            echo "trusted kernel catalog already selects $KERNEL_RELEASE"
+            exit 0
+          fi
+
+          expected_base="$(git rev-parse HEAD)"
+          git fetch origin main
+          remote_base="$(git rev-parse origin/main)"
+          if [ "$expected_base" != "$remote_base" ]; then
+            echo "origin/main advanced while promoting the kernel catalog; re-run the workflow" >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add kernel-catalog.json
+          staged_paths="$(git diff --cached --name-only)"
+          if [ "$staged_paths" != "kernel-catalog.json" ]; then
+            echo "kernel catalog promotion staged unexpected paths: $staged_paths" >&2
+            exit 1
+          fi
+          git commit -m "catalog: promote $KERNEL_RELEASE"
+          git push --force-with-lease=refs/heads/main:"$remote_base" origin HEAD:main
+
+      - name: Wait for public trusted kernel catalog
+        env:
+          KERNEL_RELEASE: ${{ needs.detect.outputs.kernel_release }}
+          MANIFEST_SHA256: ${{ steps.catalog.outputs.manifest_sha256 }}
+        run: |
+          scripts/wait-for-public-kernel-catalog.sh \
+            "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/kernel-catalog.json" \
+            "$KERNEL_RELEASE" \
+            "$MANIFEST_SHA256"
+
+  publish-kernel-packages:
+    name: Publish kernel package sources
+    needs:
+      - detect
+      - build-kernel
+      - promote-kernel-catalog
+    if: >-
+      ${{
+        always() &&
+        needs.detect.outputs.package_publication_needed == 'true' &&
+        (needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped') &&
+        needs.promote-kernel-catalog.result == 'success'
+      }}
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publish-kernel-packages.yml
+    with:
+      kernel_version: ${{ needs.detect.outputs.kernel_version }}
+      kernel_release: ${{ needs.detect.outputs.kernel_release }}
+    secrets: inherit

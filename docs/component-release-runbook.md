@@ -1,8 +1,9 @@
 # Component Release Runbook
 
 This runbook gates promotion of independently published VM guest bases and
-kernels. A workflow completing successfully creates a candidate; it does not by
-itself make that candidate stable.
+host runtimes. A workflow completing successfully creates a candidate; it does
+not by itself make that candidate stable. Stable guest kernel package releases
+use the separate unattended path described below.
 
 ## Compatibility invariant
 
@@ -18,6 +19,25 @@ guest kernel selector is a request that Catch resolves against verified host
 catalog metadata. No guest request may select, download, stage, or promote a
 host Firecracker runtime.
 
+## Stable kernel package automation
+
+The scheduled stable-kernel workflow is catalog-first and requires no human
+promotion step. It publishes or reuses an immutable kernel release, commits the
+exact release ID and manifest SHA-256 to `kernel-catalog.json`, waits for the
+ordinary public raw catalog URL used by released Catch versions to pass its
+cache lifetime, and verifies the stable catalog identity before publishing apt
+or Nix selector metadata.
+
+Catalog promotion and public package state are detected independently. A later
+scheduled run repairs either half if a prior run stopped after the catalog
+commit or after package deployment. The workflow writes `main` with
+workflow-scoped `contents: write`, while package publication separately receives
+Pages and OIDC write permissions. It does not create or merge a pull request.
+
+Kernel versions may change release IDs, manifest digests, and checksums, but
+guest packages continue to emit selector schema 2. Catch versions that already
+support that catalog-backed schema do not need an update for each new kernel.
+
 ## Promotion order
 
 1. Ship Catch dual-read support, independent immutable caches, measured legacy
@@ -25,8 +45,9 @@ host Firecracker runtime.
 2. Install that exact Catch revision on a canary host. Confirm representative
    v11, v15, and v29 monolithic VMs retain their image provenance, disk, running
    PID, and exact matching Firecracker+jailer pair during adoption.
-3. Publish an immutable kernel candidate and guest-base candidates. Record exact
-   release IDs and manifest SHA-256 values; do not move stable pointers.
+3. Publish immutable guest-base candidates and, when testing kernel behavior,
+   use an immutable kernel release. Record exact release IDs and manifest
+   SHA-256 values; do not move reviewed guest-base or runtime stable pointers.
 4. Provision both Ubuntu and NixOS candidates through an exact promoted host
    runtime. Confirm the Firecracker child runs as the host `yeet-vm` user through
    the runtime's matching jailer.
@@ -39,8 +60,10 @@ host Firecracker runtime.
    a running VM's PID, unit, disk, or component lock.
 7. Store validation evidence under
    `attestations/components/<component-id>/<manifest-sha256>/validation.json`.
-   Open a reviewed PR that changes only the intended candidate/stable catalog
-   pointers, then merge it after all required checks pass.
+   Open a reviewed PR that changes only the intended guest-base or runtime
+   candidate/stable catalog pointers, then merge it after all required checks
+   pass. Stable kernel package promotion remains the unattended catalog-first
+   workflow above.
 8. Retain legacy catalog entries, tags, and assets indefinitely until a separate
    deprecation policy is explicitly approved.
 

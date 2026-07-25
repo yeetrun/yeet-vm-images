@@ -62,29 +62,45 @@ fi
 assert_contains "$sync_workflow" "kernel_release:"
 assert_contains "$sync_workflow" "kernel_release_build:"
 assert_contains "$sync_workflow" "promotion_needed:"
+assert_contains "$sync_workflow" "package_publication_needed:"
 assert_contains "$sync_workflow" 'YEET_KERNEL_VERSION="$KERNEL_VERSION" \'
 assert_contains "$sync_workflow" 'scripts/download-kernel-release.sh "$current_release" "$current_dir"'
 assert_contains "$sync_workflow" 'manifest_sha256="$(sha256sum "$current_dir/kernel-manifest.json" | awk '"'"'{ print $1 }'"'"')"'
 assert_contains "$sync_workflow" '.channels.amd64.stable == {kernel_id: $release, manifest_sha256: $manifest}'
+assert_job_contains "$sync_workflow" "detect" 'public_kernel_catalog="$RUNNER_TEMP/public-kernel-catalog.json"'
+assert_job_contains "$sync_workflow" "detect" "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/kernel-catalog.json"
+assert_contains "$sync_workflow" "group: sync-latest-stable-kernel"
+assert_contains "$sync_workflow" "cancel-in-progress: false"
+assert_not_contains "$sync_workflow" "pull-requests: write"
+assert_not_contains "$sync_workflow" "peter-evans/create-pull-request@"
 assert_not_contains "$sync_workflow" "package_image_release"
 assert_not_contains "$sync_workflow" "Kernel package source image release"
 
 assert_job_contains "$sync_workflow" "build-kernel" "uses: ./.github/workflows/build-kernel.yml"
 assert_job_contains "$sync_workflow" "build-kernel" 'kernel_release: ${{ needs.detect.outputs.kernel_release }}'
+assert_job_contains "$sync_workflow" "build-kernel" "contents: write"
 assert_not_contains "$sync_workflow" "  build-ubuntu:"
 assert_not_contains "$sync_workflow" "  build-nixos:"
 assert_not_contains "$sync_workflow" "uses: ./.github/workflows/build-ubuntu-26.04.yml"
 assert_not_contains "$sync_workflow" "uses: ./.github/workflows/build-nixos-26.05.yml"
 assert_job_contains "$sync_workflow" "publish-kernel-packages" "- detect"
 assert_job_contains "$sync_workflow" "publish-kernel-packages" "- build-kernel"
+assert_job_contains "$sync_workflow" "publish-kernel-packages" "- promote-kernel-catalog"
 assert_job_not_contains "$sync_workflow" "publish-kernel-packages" "- build-ubuntu"
 assert_job_contains "$sync_workflow" "publish-kernel-packages" "needs.build-kernel.result == 'success' || needs.build-kernel.result == 'skipped'"
+assert_job_contains "$sync_workflow" "publish-kernel-packages" "needs.detect.outputs.package_publication_needed == 'true'"
+assert_job_contains "$sync_workflow" "publish-kernel-packages" "needs.promote-kernel-catalog.result == 'success'"
 assert_job_contains "$sync_workflow" "publish-kernel-packages" 'kernel_release: ${{ needs.detect.outputs.kernel_release }}'
+assert_job_contains "$sync_workflow" "publish-kernel-packages" "contents: write"
+assert_job_contains "$sync_workflow" "publish-kernel-packages" "pages: write"
+assert_job_contains "$sync_workflow" "publish-kernel-packages" "id-token: write"
+assert_job_not_contains "$sync_workflow" "publish-kernel-packages" "pull-requests:"
 assert_contains "$sync_workflow" "scripts/update-kernel-catalog.sh"
-assert_contains "$sync_workflow" "peter-evans/create-pull-request@"
-assert_job_contains "$sync_workflow" "promote-kernel-catalog" "needs.publish-kernel-packages.result == 'success'"
 assert_job_contains "$sync_workflow" "promote-kernel-catalog" "--channel stable"
-assert_job_contains "$sync_workflow" "promote-kernel-catalog" "add-paths: kernel-catalog.json"
+assert_job_contains "$sync_workflow" "promote-kernel-catalog" "contents: write"
+assert_job_contains "$sync_workflow" "promote-kernel-catalog" "git push --force-with-lease="
+assert_job_contains "$sync_workflow" "promote-kernel-catalog" "scripts/wait-for-public-kernel-catalog.sh"
+assert_job_not_contains "$sync_workflow" "promote-kernel-catalog" "publish-kernel-packages"
 
 assert_contains "$publish_workflow" "kernel_release:"
 assert_not_contains "$publish_workflow" "image_release:"
