@@ -55,7 +55,8 @@ after all of the following are true:
    the amd64 stable channel selects `(R, M)`.
 3. The ordinary public URL
    `https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/kernel-catalog.json`
-   returns that entry after the raw-content cache lifetime has elapsed.
+   returns that entry, remains selected after one additional raw-content cache
+   lifetime, and returns it again.
 4. Only then may apt, Nix metadata, and GitHub Pages expose the selector.
 
 Catalog-first failure is safe: guests cannot install the new selector yet.
@@ -73,8 +74,8 @@ unsafe order impossible.
 3. Build the immutable kernel release when necessary.
 4. Promote `kernel-catalog.json` directly to `main` with a race-checked,
    catalog-only commit.
-5. Wait out the raw-content cache lifetime and verify `(R, M)` through the
-   ordinary public catalog URL.
+5. Verify `(R, M)` through the ordinary public catalog URL, wait one additional
+   cache lifetime, and verify the same identity again.
 6. Publish the package only when its public catalog is missing or stale.
 
 Promotion runs when either side needs repair. This means a run can repair the

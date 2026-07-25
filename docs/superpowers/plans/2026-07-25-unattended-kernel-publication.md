@@ -21,9 +21,9 @@
 ## File Structure
 
 - Create `scripts/wait-for-public-kernel-catalog.sh`
-  - Wait out the public raw-content cache lifetime, then require the exact
-    release ID and manifest digest in both the catalog entries and stable
-    channel.
+  - Observe the exact release ID and manifest digest in the public raw catalog,
+    wait one additional cache lifetime, then require the same stable identity
+    again.
 - Create `scripts/test-wait-for-public-kernel-catalog.sh`
   - Exercise successful verification, catalog mismatch, and test-controlled
     zero-delay behavior.
@@ -92,7 +92,8 @@ them pass.
 **Interfaces:**
 - Consumes: `<catalog-url> <release-id> <manifest-sha256>`.
 - Produces: exit 0 only after the public catalog selects the exact trusted
-  identity; otherwise a non-zero exit.
+  identity on both sides of a full cache-settle interval; otherwise a non-zero
+  exit.
 - Environment:
   `YEET_KERNEL_CATALOG_SETTLE_SECONDS` defaults to `305`,
   `YEET_KERNEL_CATALOG_ATTEMPTS` defaults to `12`, and
@@ -132,8 +133,9 @@ Expected: FAIL because `scripts/wait-for-public-kernel-catalog.sh` is absent.
 - [ ] **Step 3: Implement the verifier**
 
 Validate the release ID, 64-character lowercase manifest digest, and numeric
-environment controls. Sleep for the settle interval, then fetch the exact URL
-without a cache-busting query and require:
+environment controls. Sleep for the settle interval, fetch the exact URL
+without a cache-busting query, wait one additional settle interval after the
+first match, and require the same identity again:
 
 ```jq
 any(.kernels[]; .kernel_id == $release and .manifest_sha256 == $manifest) and

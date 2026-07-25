@@ -45,29 +45,41 @@ tmp_catalog="$(mktemp)"
 trap 'rm -f "$tmp_catalog"' EXIT
 
 if [ "$settle_seconds" -gt 0 ]; then
-	echo "waiting ${settle_seconds}s for the public kernel catalog cache to expire"
+	echo "waiting ${settle_seconds}s before checking the public kernel catalog"
 	sleep "$settle_seconds"
 fi
 
-attempt=1
-while [ "$attempt" -le "$attempts" ]; do
-	if curl -fsSL --retry 3 --retry-all-errors -o "$tmp_catalog" "$catalog_url" &&
+catalog_matches() {
+	curl -fsSL --retry 3 --retry-all-errors -o "$tmp_catalog" "$catalog_url" &&
 		jq -e \
 			--arg release "$release_id" \
 			--arg manifest "$manifest_sha256" '
-				.schema_version == 1 and
-				any(.kernels[]; .kernel_id == $release and .manifest_sha256 == $manifest) and
-				.channels.amd64.stable == {kernel_id: $release, manifest_sha256: $manifest}
-			' "$tmp_catalog" >/dev/null; then
-		echo "public kernel catalog selects $release_id at $manifest_sha256"
-		exit 0
-	fi
+			.schema_version == 1 and
+			any(.kernels[]; .kernel_id == $release and .manifest_sha256 == $manifest) and
+			.channels.amd64.stable == {kernel_id: $release, manifest_sha256: $manifest}
+		' "$tmp_catalog" >/dev/null
+}
 
-	if [ "$attempt" -lt "$attempts" ] && [ "$retry_seconds" -gt 0 ]; then
-		sleep "$retry_seconds"
-	fi
-	attempt="$((attempt + 1))"
-done
+wait_for_match() {
+	local phase="$1"
+	local attempt=1
+	while [ "$attempt" -le "$attempts" ]; do
+		if catalog_matches; then
+			return 0
+		fi
+		if [ "$attempt" -lt "$attempts" ] && [ "$retry_seconds" -gt 0 ]; then
+			sleep "$retry_seconds"
+		fi
+		attempt="$((attempt + 1))"
+	done
+	echo "public kernel catalog did not $phase $release_id at $manifest_sha256 after $attempts attempt(s)" >&2
+	return 1
+}
 
-echo "public kernel catalog did not select $release_id at $manifest_sha256 after $attempts attempt(s)" >&2
-exit 1
+wait_for_match "select"
+if [ "$settle_seconds" -gt 0 ]; then
+	echo "public kernel catalog selects $release_id; waiting another ${settle_seconds}s to drain older cache entries"
+	sleep "$settle_seconds"
+fi
+wait_for_match "remain on"
+echo "public kernel catalog stably selects $release_id at $manifest_sha256"

@@ -24,9 +24,9 @@ host Firecracker runtime.
 The scheduled stable-kernel workflow is catalog-first and requires no human
 promotion step. It publishes or reuses an immutable kernel release, commits the
 exact release ID and manifest SHA-256 to `kernel-catalog.json`, waits for the
-ordinary public raw catalog URL used by released Catch versions to pass its
-cache lifetime, and verifies the stable catalog identity before publishing apt
-or Nix selector metadata.
+ordinary public raw catalog URL used by released Catch versions to show the new
+identity, waits one additional full cache lifetime, and verifies the identity
+again before publishing apt or Nix selector metadata.
 
 Catalog promotion and public package state are detected independently. A later
 scheduled run repairs either half if a prior run stopped after the catalog
