@@ -11,7 +11,7 @@
     "workflow_run": "30154947262"
   },
   "validation": {
-    "yeet_commit": "84a5eb72dc4a1117b233cf465d8a0c3df50c744b",
+    "yeet_commit": "bd4b921a027225bee9a536883b26fa6dd3519245",
     "catalog_commit": "0119b427bd8ea27b4440d5c6efe702ab24ce111f",
     "host_class": "linux-amd64-kvm-zfs",
     "guest_profiles": [
@@ -34,15 +34,17 @@
       "current_kernel_matrix": "passed-by-integration",
       "previous_kernel_matrix": "passed-by-integration",
       "raw_zfs_storage_matrix": "passed-by-integration",
-      "runtime_identity_unchanged": "passed"
+      "runtime_identity_unchanged": "passed",
+      "iso_vm_unit_file_cleanup": "passed-by-integration",
+      "systemd_failure_state_cleanup": "passed-live"
     }
   },
   "integration": {
-    "attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.16.1-yeet-v1-integration-30162802705/runtime-attestation.json",
-    "attestation_sha256": "b11ab5ab92c6ef68c3f174ebc322efa3a932c48da15fc8226a893eb5a5977ef3",
-    "workflow_run": "30162802705"
+    "attestation_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/firecracker-v1.16.1-yeet-v1-integration-30166388128/runtime-attestation.json",
+    "attestation_sha256": "a02b22af29e8fe8a86161d47af86255ebec3b999f83361d40b64a68e93ec2e63",
+    "workflow_run": "30166388128"
   },
   "started_at": "2026-07-25T15:06:49Z",
-  "completed_at": "2026-07-25T16:18:01Z",
+  "completed_at": "2026-07-25T17:03:57Z",
   "result": "passed"
 }
