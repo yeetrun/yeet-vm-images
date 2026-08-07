@@ -1,11 +1,11 @@
 {
-  kernelVersion = "7.1.6";
-  releaseId = "kernel-linux-7.1.6-yeet-v1";
-  manifestSha256 = "fbfe41bde128181f4d3d4afedcb0fd0a2fa857887f409f2d85e600d6ae9fb7c4";
-  vmlinuxUrl = "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.6-yeet-v1/vmlinux";
-  kernelConfigUrl = "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.6-yeet-v1/kernel.config";
-  vmlinuxHash = "sha256-aHuN7WRMM1JabzYEmreeCYCDAe5C8Hq+Q3tV06mttT0=";
-  kernelConfigHash = "sha256-UjZDt/cq33ZshFucJeqa1lvMNkG+krDeTELx/YCmXqo=";
-  vmlinuxSha256Raw = "687b8ded644c33525a6f36049ab79e09808301ee42f07abe437b55d3a9adb53d";
-  kernelConfigSha256Raw = "523643b7f72adf766c845b9c25ea9ad65bcc3641be92b0de4c42f1fd80a65eaa";
+  kernelVersion = "7.1.7";
+  releaseId = "kernel-linux-7.1.7-yeet-v1";
+  manifestSha256 = "ef406ebb6b8d26691c6954ddad6eb3074b14ef256102f92e6d645c2b3dced916";
+  vmlinuxUrl = "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.7-yeet-v1/vmlinux";
+  kernelConfigUrl = "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.7-yeet-v1/kernel.config";
+  vmlinuxHash = "sha256-W+h6WZ83iy497PprCIc1VAFKPdEa3zaEjADJXkLP4xc=";
+  kernelConfigHash = "sha256-bVqqTzLmQN9W6aR6hYL+i5ca+WyA2uXQdSqwv8WZ8tM=";
+  vmlinuxSha256Raw = "5be87a599f378b2e3decfa6b08873554014a3dd11adf36848c00c95e42cfe317";
+  kernelConfigSha256Raw = "6d5aaa4f32e640df56e9a47a8582fe8b971af96c80dae5d0752ab0bfc599f2d3";
 }
