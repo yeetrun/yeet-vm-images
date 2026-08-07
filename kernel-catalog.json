@@ -40,13 +40,21 @@
       "architecture": "amd64",
       "manifest_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.6-yeet-v1/kernel-manifest.json",
       "manifest_sha256": "fbfe41bde128181f4d3d4afedcb0fd0a2fa857887f409f2d85e600d6ae9fb7c4"
+    },
+    {
+      "kernel_id": "kernel-linux-7.1.7-yeet-v1",
+      "upstream_version": "7.1.7",
+      "packaging_revision": 1,
+      "architecture": "amd64",
+      "manifest_url": "https://github.com/yeetrun/yeet-vm-images/releases/download/kernel-linux-7.1.7-yeet-v1/kernel-manifest.json",
+      "manifest_sha256": "ef406ebb6b8d26691c6954ddad6eb3074b14ef256102f92e6d645c2b3dced916"
     }
   ],
   "channels": {
     "amd64": {
       "stable": {
-        "kernel_id": "kernel-linux-7.1.6-yeet-v1",
-        "manifest_sha256": "fbfe41bde128181f4d3d4afedcb0fd0a2fa857887f409f2d85e600d6ae9fb7c4"
+        "kernel_id": "kernel-linux-7.1.7-yeet-v1",
+        "manifest_sha256": "ef406ebb6b8d26691c6954ddad6eb3074b14ef256102f92e6d645c2b3dced916"
       },
       "candidate": null
     }
