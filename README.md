@@ -102,7 +102,9 @@ The images boot a yeet-managed Linux kernel instead of the distribution kernel.
 It is built for Firecracker direct kernel boot, so the VM does not need an
 initrd. The config starts from Firecracker's microVM kernel baseline and adds
 the features yeet images need for guest networking, router-style workloads,
-file sync, and in-guest Nix builds.
+file sync, and in-guest Nix builds. Legacy i8042 and AT keyboard drivers are
+disabled because Firecracker guests do not expose that hardware and probing it
+only delays boot.
 
 Each upstream kernel version is published once as a canonical kernel release,
 for example `kernel-linux-<version>-yeet-v<N>`. A canonical kernel release

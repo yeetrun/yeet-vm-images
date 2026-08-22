@@ -5,6 +5,7 @@
 
 set -euo pipefail
 
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 kernel_version="${YEET_KERNEL_VERSION:-7.0}"
 out_dir="${1:-dist/kernel-linux-$kernel_version}"
 work_dir="${YEET_KERNEL_WORK_DIR:-}"
@@ -124,9 +125,13 @@ echo "Configuring yeet Firecracker kernel..."
 		--enable NETFILTER_XT_MATCH_CONNTRACK \
 		--enable NETFILTER_XT_MATCH_ADDRTYPE \
 		--enable IP6_NF_IPTABLES \
+		--disable SERIO_I8042 \
+		--disable KEYBOARD_ATKBD \
 		--set-str LOCALVERSION "$localversion"
 	make olddefconfig
 )
+
+"$repo_root/scripts/verify-kernel-boot-policy.sh" "$src_dir/.config"
 
 require_config() {
 	local key="$1"

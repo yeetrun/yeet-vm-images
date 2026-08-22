@@ -121,6 +121,7 @@ jobs:
       - name: Verify kernel assets
         run: |
           set -euo pipefail
+          scripts/verify-kernel-boot-policy.sh "$KERNEL_OUT_DIR/kernel.config"
           for asset in vmlinux kernel.config kernel-manifest.json kernel-checksums.txt; do
             test -s "$KERNEL_OUT_DIR/$asset"
           done
