@@ -80,7 +80,7 @@ jq -e --arg kernel_id "$kernel_id" --arg manifest_sha "$manifest_sha" \
 	($updated.kernels | length) == (($original[0].kernels | length) + 1) and
 	($original[0].kernels - $updated.kernels | length) == 0 and
 	.channels.amd64.stable == {kernel_id: $kernel_id, manifest_sha256: $manifest_sha} and
-	.channels.amd64.candidate == null
+	.channels.amd64.candidate == $original[0].channels.amd64.candidate
 ' "$tmp_dir/kernel-catalog.json" >/dev/null
 
 "$repo_root/scripts/verify-component-catalogs.sh" \
