@@ -76,6 +76,23 @@ commands and results for reboot, readiness, rollback, restore/clone, image
 update, and prune. Do not include private hostnames, usernames, addresses, or
 filesystem layout in committed public evidence; use neutral capability labels.
 
+For a boot-performance promotion, also record the host VM-unit start to the
+first successful public-key SSH command as the primary metric. Discard one
+warm-up, retain at least 20 raw warm-boot samples, and report minimum, p50, p95,
+maximum, and failed-boot count. Record the matching Firecracker start, first
+kernel message, init entry, guest-ready observation, and multi-user boundaries
+when present so host observation latency is not confused with guest startup.
+Include raw and ZFS-backed Ubuntu results, the NixOS result, package or rebuild
+compatibility, the booted kernel identity, and the exact guest, kernel, runtime,
+Catch, and Yeet source identities used for every result.
+
+A boot-performance candidate cannot move stable with incomplete phase evidence,
+any failed warm boot, a Firecracker-to-kernel p95 regression above 10 percent,
+or an unexplained SSH p50 regression. A performance-only change must improve
+SSH p50 by at least 50 milliseconds. After promotion, resolve artifacts through
+the ordinary public stable catalogs and pass at least five additional boots per
+affected guest family before declaring the rollout complete.
+
 Promotion is blocked if a release or manifest is mutable, an artifact digest is
 wrong, a Firecracker+jailer version pair differs, a guest can influence host
 runtime selection, adoption restarts a VM, rollback fails, or required evidence
