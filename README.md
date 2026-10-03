@@ -211,6 +211,20 @@ so a preserved tag or draft consumes its `vN` and the next attempt uses `vN+1`.
 The serialized job independently re-resolves the discovered exact ID before
 building.
 
+Both scheduled discovery and manual version selection require a reviewed record
+in `security/firecracker-runtime-policy.json` before requesting publication.
+The v1.17.0 record was reviewed on 2026-10-03 against the official
+[release](https://github.com/firecracker-microvm/firecracker/releases/tag/v1.17.0),
+[support policy](https://github.com/firecracker-microvm/firecracker/blob/main/docs/RELEASE_POLICY.md),
+and the release commit's
+[seccomp build](https://github.com/firecracker-microvm/firecracker/blob/95f868c8e345b1cc8faccd1a3c910b4989dc3f58/src/firecracker/build.rs)
+and [default filter selection](https://github.com/firecracker-microvm/firecracker/blob/95f868c8e345b1cc8faccd1a3c910b4989dc3f58/src/firecracker/src/seccomp.rs).
+Its annotated upstream tag is unsigned. Publishing its first candidate requires
+a manual run with `upstream_version=v1.17.0` and `allow_unsigned_tag=true`,
+including the protected `firecracker-runtime-overrides` approval. Scheduled runs
+do not grant this override; after publication they verify the existing candidate
+and report a no-op.
+
 Before reporting a no-op, `verify-published-firecracker-runtime.sh` verifies the
 published release identity and immutable state, its exact four asset records and
 downloaded bytes, the runtime manifest schema and cross-field contract, and the

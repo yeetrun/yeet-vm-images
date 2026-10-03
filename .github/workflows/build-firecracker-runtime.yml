@@ -77,11 +77,14 @@ jobs:
               echo "Invalid requested upstream version: $upstream_version" >&2
               exit 1
             }
-            scripts/resolve-firecracker-runtime-policy.py security/firecracker-runtime-policy.json "$upstream_version" >/dev/null
           else
             upstream="$(scripts/resolve-latest-firecracker.sh)"
             upstream_version="$(jq -er '.upstream_version' <<<"$upstream")"
           fi
+          scripts/resolve-firecracker-runtime-policy.py security/firecracker-runtime-policy.json "$upstream_version" >/dev/null || {
+            echo "Review $upstream_version in security/firecracker-runtime-policy.json before publishing a candidate." >&2
+            exit 1
+          }
           allocation="$(scripts/resolve-firecracker-runtime-release.sh "$upstream_version")"
           runtime_id="$(jq -er '.next_release' <<<"$allocation")"
 
