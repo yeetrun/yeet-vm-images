@@ -230,10 +230,19 @@ def main() -> None:
             checksum_header[148:156] = b"        "
             if sum(checksum_header) != stored_checksum:
                 fail("tar header checksum is invalid")
-            if header[257:263] != b"ustar\0" or header[263:265] != b"00":
-                fail("archive member is not canonical POSIX ustar")
+            if header[257:263] == b"ustar\0" and header[263:265] == b"00":
+                prefix_field = parse_string(header[345:500], "member prefix")
+            elif header[257:265] == b"ustar  \0":
+                # GNU stores extension fields where POSIX stores the path prefix.
+                # Official releases use short regular-file names and no extensions.
+                if any(header[345:512]):
+                    fail("GNU tar extended metadata is unsupported")
+                if header[156:157] not in (b"\0", b"0"):
+                    fail("GNU tar member is not a regular file")
+                prefix_field = ""
+            else:
+                fail("archive member is not supported POSIX or GNU ustar")
             name = parse_string(header[0:100], "member name")
-            prefix_field = parse_string(header[345:500], "member prefix")
             effective_name = f"{prefix_field}/{name}" if prefix_field else name
             typeflag = header[156:157]
             size = parse_octal(header[124:136], "member size")

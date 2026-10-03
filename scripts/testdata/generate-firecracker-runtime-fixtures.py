@@ -146,6 +146,10 @@ def mutate_header(tar_data: bytes, scenario: str) -> bytes:
         data[6:10] = b"EVIL"
     elif scenario == "oversized-member":
         data[124:136] = f"{80 * 1024 * 1024 + 1:011o}\0".encode()
+    elif scenario == "gnu-extended-metadata":
+        data[345] = ord("1")
+    elif scenario == "gnu-invalid-magic":
+        data[257:265] = b"ustar  X"
     else:
         return tar_data
     data[148:156] = b"        "
@@ -169,8 +173,13 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     tar_buffer = io.BytesIO()
     archive_format = tarfile.PAX_FORMAT if args.scenario == "valid-pax" else tarfile.USTAR_FORMAT
+    member_scenario = args.scenario
+    if args.scenario == "valid-gnu" or args.scenario.startswith("gnu-"):
+        archive_format = tarfile.GNU_FORMAT
+        if args.scenario != "gnu-longname":
+            member_scenario = args.scenario.removeprefix("gnu-")
     with tarfile.open(fileobj=tar_buffer, mode="w", format=archive_format) as tar:
-        for member in members(args.scenario):
+        for member in members(member_scenario):
             if args.scenario == "valid-pax":
                 info = tarfile.TarInfo(member[0])
                 info.size = len(member[1])

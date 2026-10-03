@@ -225,6 +225,12 @@ including the protected `firecracker-runtime-overrides` approval. Scheduled runs
 do not grant this override; after publication they verify the existing candidate
 and report a no-op.
 
+Runtime ingestion accepts POSIX ustar and the GNU ustar format used by v1.17.0.
+GNU members must be regular files with short inline names and empty extension
+fields. GNU long-name and sparse metadata remain unsupported; all members still
+pass the same path, mode, size, duplicate, and checksum validation. Only the
+runtime pair and its `SHA256SUMS` file are copied from the upstream archive.
+
 Before reporting a no-op, `verify-published-firecracker-runtime.sh` verifies the
 published release identity and immutable state, its exact four asset records and
 downloaded bytes, the runtime manifest schema and cross-field contract, and the

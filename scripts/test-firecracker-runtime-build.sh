@@ -231,7 +231,12 @@ for name in SHA256SUMS firecracker-v1.16.1-x86_64 jailer-v1.16.1-x86_64; do
 done
 [ "$(find "$tmp_dir/valid-pax-output" -type f | wc -l | tr -d ' ')" = 3 ] || fail "ignored PAX archive members were extracted"
 download_case "$valid_pax" "$tmp_dir/download-valid-pax" --allow-unsigned-tag
-for scenario in absolute parent dot duplicate-normalized duplicate-effective symlink hardlink device fifo socket sparse pax pax-size pax-unknown global-pax gnu-longname unexpected-type unexpected-prefix bad-mode invalid-encoding embedded-nul oversized-member oversized-total decompression-bomb; do
+valid_gnu="$(generate_case valid-gnu valid-gnu)"
+download_case "$valid_gnu" "$tmp_dir/download-valid-gnu" --allow-unsigned-tag
+for name in SHA256SUMS firecracker-v1.16.1-x86_64 jailer-v1.16.1-x86_64; do
+	cmp "$tmp_dir/download-valid-gnu/$name" "$tmp_dir/download-direct/$name" || fail "GNU extraction changed $name"
+done
+for scenario in absolute parent dot duplicate-normalized duplicate-effective symlink hardlink device fifo socket sparse pax pax-size pax-unknown global-pax gnu-longname gnu-extended-metadata gnu-invalid-magic gnu-symlink gnu-sparse gnu-parent gnu-duplicate-effective gnu-bad-mode unexpected-type unexpected-prefix bad-mode invalid-encoding embedded-nul oversized-member oversized-total decompression-bomb; do
 	assert_download_failure "$scenario" "$scenario" 'archive inspection failed'
 done
 compressed_cap="$tmp_dir/compressed-cap.tgz"; truncate -s $((128 * 1024 * 1024 + 1)) "$compressed_cap"; mkdir "$tmp_dir/compressed-cap-out"
