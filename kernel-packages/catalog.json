@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "release_id": "kernel-linux-7.3-yeet-v1",
-  "manifest_sha256": "ae8580c0cf6a3f659adb8225c1f526d922a71d41760b9e6708c6c5b9c8140e8f",
+  "release_id": "kernel-linux-7.3.1-yeet-v1",
+  "manifest_sha256": "5afcebd6208de2f1f1df8fab3464da3b9f5c175443724216515f26803cf9f865",
   "selector_schema_version": 2,
   "debian": {
     "repository_url": "https://yeetrun.github.io/yeet-vm-images/apt",
     "package": "yeet-vm-kernel",
-    "version": "7.3-1"
+    "version": "7.3.1-1"
   },
   "nix": {
     "metadata_url": "https://raw.githubusercontent.com/yeetrun/yeet-vm-images/main/kernel-packages/metadata.nix"
