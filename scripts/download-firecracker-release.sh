@@ -64,14 +64,21 @@ trap cleanup EXIT INT TERM
 
 api_url="https://api.github.com/repos/firecracker-microvm/firecracker/releases/tags/$tag"
 release_json="$tmp_dir/release.json"
+api_headers=(
+	--header 'Accept: application/vnd.github+json'
+	--header 'X-GitHub-Api-Version: 2022-11-28'
+	--header 'User-Agent: yeet-vm-images-firecracker-runtime-ingest/1'
+)
+if [ -n "${FIRECRACKER_RELEASE_API_TOKEN:-}" ]; then
+	api_headers+=(--header "Authorization: Bearer $FIRECRACKER_RELEASE_API_TOKEN")
+fi
 api_response="$(curl --disable --fail --silent --show-error \
 	--proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 60 \
 	--max-filesize "$max_release_json_size" \
-	--header 'Accept: application/vnd.github+json' \
-	--header 'X-GitHub-Api-Version: 2022-11-28' \
-	--header 'User-Agent: yeet-vm-images-firecracker-runtime-ingest/1' \
+	"${api_headers[@]}" \
 	--output "$release_json" --write-out $'%{http_code}\n%{url_effective}\n%{num_redirects}' \
 	"$api_url")" || fail "official GitHub release API query failed"
+unset FIRECRACKER_RELEASE_API_TOKEN api_headers
 api_status="$(sed -n '1p' <<<"$api_response")"
 api_effective="$(sed -n '2p' <<<"$api_response")"
 api_redirects="$(sed -n '3p' <<<"$api_response")"
@@ -111,14 +118,12 @@ checksum_asset="$(asset_record "$checksum_name" "$browser_base/$checksum_name" "
 download_asset() {
 	local record="$1" output="$2" name="$3" maximum_size="$4"
 	local url response status effective redirects
-	url="$(jq -r '.url' <<<"$record")"
-	[[ "$url" =~ ^https://api[.]github[.]com/repos/firecracker-microvm/firecracker/releases/assets/[1-9][0-9]*$ ]] || fail "invalid initial asset API URL"
+	url="$(jq -er '.browser_download_url' <<<"$record")"
+	[ "$url" = "$browser_base/$name" ] || fail "unexpected initial asset URL for $name"
 	response="$(curl --disable --fail --silent --show-error --location \
 		--max-redirs 3 --proto '=https' --proto-redir '=https' --tlsv1.2 \
 		--connect-timeout 10 --max-time 300 \
 		--max-filesize "$maximum_size" \
-		--header 'Accept: application/octet-stream' \
-		--header 'X-GitHub-Api-Version: 2022-11-28' \
 		--header 'User-Agent: yeet-vm-images-firecracker-runtime-ingest/1' \
 		--output "$output" --write-out $'%{http_code}\n%{url_effective}\n%{num_redirects}' \
 		"$url")" || fail "asset download failed, exceeded size policy, or exceeded redirect policy: $name"

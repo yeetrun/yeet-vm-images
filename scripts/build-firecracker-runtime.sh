@@ -84,6 +84,7 @@ download_args=(--upstream-version "$version" --dest "$tmp_dir/download")
 [ "$allow_unsigned" = false ] || download_args+=(--allow-unsigned-tag)
 [ "$allow_rotation" = false ] || download_args+=(--allow-signer-rotation)
 "$downloader" "${download_args[@]}"
+unset FIRECRACKER_RELEASE_API_TOKEN
 verification="$tmp_dir/download/verification.json"
 [ "$(jq -er '.version' "$verification")" = "$version" ] || fail "download verification version mismatch"
 source_firecracker="$tmp_dir/download/firecracker-$version-x86_64"

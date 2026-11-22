@@ -238,6 +238,9 @@ including the protected `firecracker-runtime-overrides` approval. Scheduled runs
 do not grant this override; after publication they verify the existing candidate
 and report a no-op.
 
+The build uses the read-only workflow token for GitHub release metadata and
+fetches the official archive and checksum URLs without credentials.
+
 Runtime ingestion accepts POSIX ustar and the GNU ustar format used by v1.17.0.
 GNU members must be regular files with short inline names and empty extension
 fields. GNU long-name and sparse metadata remain unsupported; all members still

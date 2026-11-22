@@ -178,6 +178,7 @@ jobs:
         env:
           ALLOW_SIGNER_ROTATION: ${{ inputs.allow_signer_rotation }}
           ALLOW_UNSIGNED_TAG: ${{ inputs.allow_unsigned_tag }}
+          FIRECRACKER_RELEASE_API_TOKEN: ${{ github.token }}
           RUNTIME_ID: ${{ steps.revision.outputs.runtime_id }}
           UPSTREAM_VERSION: ${{ needs.discover.outputs.upstream_version }}
         run: |

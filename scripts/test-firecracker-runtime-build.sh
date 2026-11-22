@@ -63,16 +63,22 @@ done
 printf 'URL=%s LOCATION=%s URLS=%s\n' "$url" "$location" "$urls" >>"$YEET_TEST_CURL_LOG"
 case "$url" in
 	https://api.github.com/repos/firecracker-microvm/firecracker/releases/tags/v1.16.1)
-		[ "$location" = false ] && [ "$max_time" = 60 ] && [ "$max_filesize" = 1048576 ] && [ "${#headers[@]}" = 3 ] || exit 86
+		[ "$location" = false ] && [ "$max_time" = 60 ] && [ "$max_filesize" = 1048576 ] || exit 86
 		[ "${headers[0]}" = 'Accept: application/vnd.github+json' ] && [ "${headers[1]}" = 'X-GitHub-Api-Version: 2022-11-28' ] && [ "${headers[2]}" = 'User-Agent: yeet-vm-images-firecracker-runtime-ingest/1' ] || exit 86
+		if [ -n "${FIRECRACKER_RELEASE_API_TOKEN:-}" ]; then
+			[ "${#headers[@]}" = 4 ] && [ "${headers[3]}" = 'Authorization: Bearer fixture-api-token' ] || exit 86
+		else
+			[ "${#headers[@]}" = 3 ] || exit 86
+		fi
 		cp "$YEET_TEST_FIXTURE/firecracker-release-v1.16.1.json" "$output"
 		printf '200\n%s\n0' "$url"
 		;;
-	https://api.github.com/repos/firecracker-microvm/firecracker/releases/assets/1001|https://api.github.com/repos/firecracker-microvm/firecracker/releases/assets/1002)
-		expected_limit=1048576; case "$url" in */1001) expected_limit=134217728 ;; esac
-		[ "$location" = true ] && [ "$proto_redir" = true ] && [ "$max_redirs" = 3 ] && [ "$max_time" = 300 ] && [ "$max_filesize" = "$expected_limit" ] && [ "${#headers[@]}" = 3 ] || exit 87
-		[ "${headers[0]}" = 'Accept: application/octet-stream' ] && [ "${headers[1]}" = 'X-GitHub-Api-Version: 2022-11-28' ] && [ "${headers[2]}" = 'User-Agent: yeet-vm-images-firecracker-runtime-ingest/1' ] || exit 87
-		case "$url" in */1001) source="$YEET_TEST_FIXTURE/firecracker-v1.16.1-x86_64.tgz" ;; *) source="$YEET_TEST_FIXTURE/firecracker-v1.16.1-x86_64.tgz.sha256.txt" ;; esac
+	https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz|https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz.sha256.txt)
+		[ -z "${FIRECRACKER_RELEASE_API_TOKEN+x}" ] || exit 87
+		expected_limit=1048576; case "$url" in *.tgz) expected_limit=134217728 ;; esac
+		[ "$location" = true ] && [ "$proto_redir" = true ] && [ "$max_redirs" = 3 ] && [ "$max_time" = 300 ] && [ "$max_filesize" = "$expected_limit" ] && [ "${#headers[@]}" = 1 ] || exit 87
+		[ "${headers[0]}" = 'User-Agent: yeet-vm-images-firecracker-runtime-ingest/1' ] || exit 87
+		source="$YEET_TEST_FIXTURE/${url##*/}"
 		case "${YEET_TEST_CURL_SCENARIO:-redirect}" in
 			redirect) cp "$source" "$output"; printf '200\nhttps://release-assets.githubusercontent.com/asset/%s\n1' "${url##*/}" ;;
 			direct) cp "$source" "$output"; printf '200\n%s\n0' "$url" ;;
@@ -152,6 +158,7 @@ chmod +x "$tmp_dir/bin/gpg"
 cat >"$tmp_dir/bin/file" <<'MOCK_FILE'
 #!/usr/bin/env bash
 set -euo pipefail
+[ -z "${FIRECRACKER_RELEASE_API_TOKEN+x}" ] || exit 1
 if [ "$(uname -s)" = Linux ]; then exec "$YEET_TEST_REAL_FILE" "$@"; fi
 case "${YEET_TEST_FILE_SCENARIO:-valid}" in
 	valid) echo 'ELF 64-bit LSB executable, x86-64, statically linked' ;;
@@ -195,7 +202,7 @@ assert_download_failure() {
 
 # C1/C2: online-only API ingest, bounded redirects, hostile curl config, and no local source interface.
 mkdir "$tmp_dir/hostile-home"; printf '%s\n' 'location-trusted = true' >"$tmp_dir/hostile-home/.curlrc"
-CURL_HOME="$tmp_dir/hostile-home" YEET_TEST_CURL_SCENARIO=redirect download_case "$fixture" "$tmp_dir/download-redirect" --allow-unsigned-tag
+CURL_HOME="$tmp_dir/hostile-home" FIRECRACKER_RELEASE_API_TOKEN=fixture-api-token YEET_TEST_CURL_SCENARIO=redirect download_case "$fixture" "$tmp_dir/download-redirect" --allow-unsigned-tag
 LC_ALL=C.UTF-8 YEET_TEST_CURL_SCENARIO=redirect download_case "$fixture" "$tmp_dir/download-hostile-locale" --allow-unsigned-tag
 YEET_TEST_CURL_SCENARIO=direct download_case "$fixture" "$tmp_dir/download-direct" --allow-unsigned-tag
 grep -q 'URLS=1' "$curl_log" || fail "curl URL cardinality was not enforced"
@@ -273,7 +280,7 @@ done
 
 # I3/I4 build: reviewed policy, real ELF on Linux, trusted Actions provenance.
 valid_out="$tmp_dir/valid-out"
-YEET_TEST_FIXTURE="$fixture" "${base_env[@]}" "$builder" --upstream-version v1.16.1 --runtime-id firecracker-v1.16.1-yeet-v1 --out "$valid_out" --allow-unsigned-tag
+YEET_TEST_FIXTURE="$fixture" FIRECRACKER_RELEASE_API_TOKEN=fixture-api-token "${base_env[@]}" "$builder" --upstream-version v1.16.1 --runtime-id firecracker-v1.16.1-yeet-v1 --out "$valid_out" --allow-unsigned-tag
 official_probe_out="$tmp_dir/official-probe-out"
 YEET_TEST_FIXTURE="$fixture" YEET_TEST_PROBE_SCENARIO=official-output "${base_env[@]}" "$builder" --upstream-version v1.16.1 --runtime-id firecracker-v1.16.1-yeet-v1 --out "$official_probe_out" --allow-unsigned-tag
 jq -e '.components.firecracker.version_output == "Firecracker v1.16.1"' "$official_probe_out/runtime-manifest.json" >/dev/null

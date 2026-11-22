@@ -86,6 +86,7 @@ require_text "$build" 'permission-contents: write' "App token Contents:write res
 require_text "$build" 'GH_TOKEN: ${{ steps.runtime-app-token.outputs.token }}' "App token is not wired to the publication step"
 [ "$(grep -Fc 'steps.runtime-app-token.outputs.token' "$build")" = 1 ] || fail "App token is exposed outside the single publication step"
 [ "$(grep -Fc 'GH_TOKEN: ${{ github.token }}' "$build")" = 1 ] || fail "default token must be limited to the read-only discovery step"
+[ "$(grep -Fc 'FIRECRACKER_RELEASE_API_TOKEN: ${{ github.token }}' "$build")" = 1 ] || fail "runtime build is missing its read-only release metadata token"
 reject_text "$build" 'GH_TOKEN: ${{ secrets.' "personal or generic secret token fallback remains"
 
 # Workflow identity must match Task 3 exactly.
