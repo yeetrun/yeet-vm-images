@@ -213,6 +213,19 @@ building.
 
 Both scheduled discovery and manual version selection require a reviewed record
 in `security/firecracker-runtime-policy.json` before requesting publication.
+
+The v1.18.0 record was reviewed on 2026-11-21 against the official
+[release](https://github.com/firecracker-microvm/firecracker/releases/tag/v1.18.0),
+[support policy](https://github.com/firecracker-microvm/firecracker/blob/2b0f61369c7df57e4654dd092b373edb8ca66984/docs/RELEASE_POLICY.md#release-status),
+and the tagged commit's
+[release build](https://github.com/firecracker-microvm/firecracker/blob/eaf83bb718a559d324613d566eaf776b31a62340/tools/release.sh),
+[seccomp build](https://github.com/firecracker-microvm/firecracker/blob/eaf83bb718a559d324613d566eaf776b31a62340/src/firecracker/build.rs),
+and [default filter selection](https://github.com/firecracker-microvm/firecracker/blob/eaf83bb718a559d324613d566eaf776b31a62340/src/firecracker/src/seccomp.rs).
+Its annotated upstream tag is unsigned. The first candidate requires a manual
+run with `upstream_version=v1.18.0` and `allow_unsigned_tag=true` through the
+`firecracker-runtime-overrides` environment. Once published, scheduled runs
+verify the existing candidate and report a no-op.
+
 The v1.17.0 record was reviewed on 2026-10-03 against the official
 [release](https://github.com/firecracker-microvm/firecracker/releases/tag/v1.17.0),
 [support policy](https://github.com/firecracker-microvm/firecracker/blob/main/docs/RELEASE_POLICY.md),
